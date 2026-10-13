@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f8f7f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121512" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<title>Number games</title>
+<link rel="icon" href="/icon.svg">
+<style>
+:root{color-scheme:light dark;--paper:#f8f7f2;--card:#fffefa;--tint:#eaefe3;--tint-warm:#e9eadc;--ink:#183c32;--ink-hover:#2c5544;--on-ink:#fffdf4;--body:#495c51;--border:#d5d9cc;--gold:#dcb96c;--mark:#859264;--focus:#b17d20;--bad:#9a3b2f;--shadow:#15392f18}
+@media(prefers-color-scheme:dark){:root{--paper:#121512;--card:#232a24;--tint:#1a211b;--tint-warm:#241f17;--ink:#e7ece4;--ink-hover:#cdd8ca;--on-ink:#121512;--body:#a3aea2;--border:#2d352e;--gold:#d7b566;--mark:#7d9a77;--focus:#d7b566;--bad:#e08b7d;--shadow:#00000055}}
+*{box-sizing:border-box;min-width:0}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 Arial,Helvetica,sans-serif}
+main{width:min(760px,calc(100% - 32px));margin-inline:auto;padding-bottom:64px}
+h1,h2,h3{font-family:Georgia,'Times New Roman',serif;font-weight:400;line-height:1.15;margin:0}
+h1{font-size:clamp(2rem,7vw,2.9rem);letter-spacing:-.03em}
+h2{font-size:1.6rem;letter-spacing:-.02em}
+h3{font-size:1.2rem}
+p{margin:0}
+a{color:inherit}
+a,button,input,select{touch-action:manipulation}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+[hidden]{display:none!important}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:18px;border-bottom:1px solid var(--border);margin-bottom:28px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;font-size:.95rem}
+.brand img{width:26px;height:26px}
+.eyebrow{font-size:.72rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--body)}
+.lead{font-size:1.08rem;line-height:1.7;color:var(--body);margin-top:18px}
+.note{font-size:.875rem;line-height:1.6;color:var(--body)}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:22px;margin-top:22px;box-shadow:0 8px 30px var(--shadow)}
+.button{display:inline-flex;align-items:center;justify-content:center;gap:10px;border:1px solid var(--ink);background:transparent;color:var(--ink);padding:13px 20px;min-height:48px;border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;text-decoration:none}
+.button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:var(--ink);color:var(--on-ink)}
+.primary:hover:not(:disabled){background:var(--ink-hover)}
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
+label{display:block;font-size:.8rem;font-weight:700;letter-spacing:.04em;margin:16px 0 5px}
+input,select{width:100%;background:var(--paper);border:1px solid var(--border);border-radius:4px;padding:12px 13px;min-height:48px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.link{display:block;margin:10px 0 16px;font-size:1rem;word-break:break-all;text-decoration:underline;text-underline-offset:3px}
+.qr{background:#fff;padding:12px;border-radius:6px;width:fit-content}
+.qr svg{display:block;width:min(232px,60vw);height:auto}
+.error{background:var(--tint-warm);border:1px solid var(--bad);color:var(--bad);border-radius:6px;padding:12px 15px;margin-bottom:18px;font-size:.9rem}
+.scroll{overflow-x:auto;margin-top:16px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+thead th{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--body);font-weight:700}
+.facts{display:grid;gap:2px;margin-top:16px}
+.fact{display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid var(--border);font-size:.95rem}
+.fact>span:first-child{color:var(--body);font-size:.875rem}
+.fact b{font-weight:700;text-align:right}
+.big{font:400 clamp(1.7rem,7vw,2.6rem)/1.2 Georgia,serif;margin-top:8px}
+.won{color:var(--mark);font-weight:700}
+.lost{color:var(--body)}
+.strip{position:relative;height:54px;margin-top:22px;border-bottom:1px solid var(--border)}
+.strip .pick{position:absolute;bottom:-5px;width:11px;height:11px;border-radius:50%;background:var(--body);transform:translateX(-50%)}
+.strip .pick.winner{background:var(--gold);width:15px;height:15px;bottom:-7px;border:1px solid var(--ink)}
+.strip .target{position:absolute;top:0;bottom:0;width:2px;background:var(--mark);transform:translateX(-50%)}
+.strip .target span{position:absolute;top:-2px;left:6px;font-size:.72rem;color:var(--mark);white-space:nowrap}
+.ends{display:flex;justify-content:space-between;font-size:.78rem;color:var(--body);margin-top:6px}
+.prose{margin-top:34px;padding-top:26px;border-top:1px solid var(--border);color:var(--body)}
+.prose h2{color:var(--ink);margin:26px 0 12px}
+.prose>h2:first-child{margin-top:0}
+.prose ul,.prose ol{padding-left:20px;display:grid;gap:10px;margin:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mark);display:inline-block}
+.past{border-top:1px solid var(--border);padding-block:14px;display:flex;justify-content:space-between;gap:18px;font-size:.9rem}
+.past>span:last-child{color:var(--body);white-space:nowrap}
+#start-note{margin-top:14px}
+#outcome:not(:empty){margin-top:20px}
+@media(max-width:480px){.two{grid-template-columns:1fr}.panel{padding:18px}}
+</style>
+</head>
+<body>
+<main>
+  <header class="bar">
+    <a class="brand" href="/"><img src="/icon.svg" alt="" width="26" height="26">Number games</a>
+    <span class="note" id="where"></span>
+  </header>
+
+  <p class="error" id="error" hidden></p>
+
+  <section id="screen-start" hidden>
+    <p class="eyebrow">For a room of people</p>
+    <h1>Everyone picks a number</h1>
+    <p class="lead">The rule says which number wins, and the rule depends on
+      what everybody else picks. Pick a third of the average and you have to
+      guess what the room will do — and what the room thinks the room will do.</p>
+    <div class="actions"><button class="button primary" id="open">Open a room</button></div>
+    <p class="note" id="start-note">Nothing to install and nobody signs up. The
+      link to the room is the only key there is, so keep the host link: it is the
+      way back in.</p>
+    <div class="prose">
+      <h2>The rules on offer</h2>
+      <ul>
+        <li><b>Closest to a fraction of the average.</b> At a third, the average
+          cannot be more than a third of itself unless somebody is wrong, so the
+          only number the whole room can hold is nought. Rooms do not start
+          there. Play it twice and watch where the second round lands.</li>
+        <li><b>Closest to a fraction of the middle number.</b> The same game,
+          except that one person answering a million does not drag the target
+          with them.</li>
+        <li><b>The lowest number nobody else picked.</b> One is the best number
+          and therefore the worst one. Some rounds have no winner at all.</li>
+        <li><b>The highest number nobody else picked.</b></li>
+        <li><b>The highest number below the average.</b> Going high wins until
+          everybody goes high.</li>
+      </ul>
+      <h2>How it goes</h2>
+      <ol>
+        <li>You open a room and put the join link on the wall.</li>
+        <li>You start a round: a rule and a range.</li>
+        <li>Everyone picks a number on their phone. Nobody sees anybody else's,
+          and neither do you — this screen may be the one on the wall.</li>
+        <li>You reveal. Everybody sees every number at once, and who won.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="screen-host" hidden>
+    <div class="panel">
+      <h2>The room</h2>
+      <p class="note">Everybody opens this:</p>
+      <a class="link" id="join-link" href="#"></a>
+      <div class="qr" id="join-qr"></div>
+      <p class="note" id="who" style="margin-top:14px"></p>
+    </div>
+
+    <form class="panel" id="start-form">
+      <h2>Start a round</h2>
+      <label for="rule">The rule</label>
+      <select id="rule"></select>
+      <div class="two">
+        <div><label for="low">From</label><input id="low" type="number" step="any" inputmode="decimal" value="0"></div>
+        <div><label for="high">To</label><input id="high" type="number" step="any" inputmode="decimal" value="10"></div>
+      </div>
+      <div class="actions"><button class="button primary" type="submit">Start the round</button></div>
+    </form>
+
+    <section class="panel" id="playing" hidden>
+      <p class="eyebrow" id="h-state"></p>
+      <h2 id="h-rule" style="margin-top:8px"></h2>
+      <p class="note" id="h-range" style="margin-top:8px"></p>
+      <p class="note" id="progress" style="margin-top:10px"></p>
+      <div class="actions">
+        <button class="button" id="close"></button>
+        <button class="button primary" id="reveal">Reveal</button>
+      </div>
+      <div id="outcome"></div>
+    </section>
+
+    <section id="board"></section>
+    <section id="history"></section>
+  </section>
+
+  <section id="screen-join" hidden>
+    <p class="eyebrow">You have been asked to pick a number</p>
+    <h1>Join the room</h1>
+    <form class="panel" id="name-form">
+      <label for="name">Your name</label>
+      <input id="name" maxlength="32" required autocomplete="nickname" autocapitalize="words">
+      <p class="note" style="margin-top:10px">Everyone sees this beside your
+        number once the round is revealed.</p>
+      <div class="actions"><button class="button primary" type="submit">Join</button></div>
+    </form>
+    <p class="note" id="join-count"></p>
+  </section>
+
+  <section id="screen-player" hidden>
+    <p class="note" id="you"></p>
+    <section class="panel">
+      <p class="eyebrow" id="p-state">Waiting</p>
+      <h1 id="p-rule" style="margin-top:10px">Waiting for the first round</h1>
+      <p class="note" id="p-range"></p>
+      <form id="pick-form" hidden>
+        <label for="pick">Your number</label>
+        <input id="pick" type="number" step="any" inputmode="decimal" required>
+        <div class="actions"><button class="button primary" type="submit">Send</button></div>
+        <p class="note" id="mine"></p>
+      </form>
+      <p class="note" id="p-closed" hidden></p>
+    </section>
+    <div id="p-outcome"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+const esc = text => String(text).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+
+/** Numbers as a person would write them. */
+function num(value) {
+  if (value === null || value === undefined || !isFinite(value)) return "—";
+  const size = Math.abs(value);
+  if (size !== 0 && (size < 1e-4 || size >= 1e15)) return value.toExponential(2);
+  return value.toLocaleString(undefined, {maximumFractionDigits: size < 10 ? 3 : size < 1000 ? 2 : 0});
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const list = names => names.length === 1 ? names[0]
+  : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+
+/** The rules on offer, and a range that suits each. */
+const RULES = [
+  {id: "of-the-mean:1:3", rule: "of-the-mean", num: 1, den: 3, name: "Closest to 1/3 of the average", low: 0, high: 10},
+  {id: "of-the-mean:2:3", rule: "of-the-mean", num: 2, den: 3, name: "Closest to 2/3 of the average", low: 0, high: 100},
+  {id: "of-the-mean:1:2", rule: "of-the-mean", num: 1, den: 2, name: "Closest to 1/2 of the average", low: 0, high: 100},
+  {id: "of-the-mean:1:1", rule: "of-the-mean", num: 1, den: 1, name: "Closest to the average", low: 0, high: 100},
+  {id: "of-the-median:2:3", rule: "of-the-median", num: 2, den: 3, name: "Closest to 2/3 of the middle number", low: 0, high: 100},
+  {id: "lowest-unique", rule: "lowest-unique", name: "The lowest number nobody else picked", low: 1, high: 20},
+  {id: "highest-unique", rule: "highest-unique", name: "The highest number nobody else picked", low: 1, high: 20},
+  {id: "under-the-mean", rule: "under-the-mean", name: "The highest number below the average", low: 0, high: 100},
+];
+
+function fail(message) {
+  $("error").textContent = message;
+  $("error").hidden = !message;
+}
+
+async function api(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers: body === undefined ? {} : {"content-type": "application/json"},
+    body: body === undefined ? null : JSON.stringify(body),
+  });
+  const text = await response.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
+  if (!response.ok) throw new Error(data.error || "Something went wrong. Try again.");
+  return data;
+}
+
+function watch(path, draw) {
+  const stream = new EventSource(path);
+  stream.onmessage = event => {
+    try {
+      draw(JSON.parse(event.data).view);
+      fail("");
+    } catch (e) {
+      fail("That room is not here any more.");
+      stream.close();
+    }
+  };
+  stream.onerror = () => {
+    if (stream.readyState === EventSource.CLOSED) fail("Lost the connection. Reload the page.");
+  };
+  return stream;
+}
+
+function show(screen) {
+  for (const section of document.querySelectorAll("main>section")) section.hidden = true;
+  $("screen-" + screen).hidden = false;
+}
+
+/** Everybody's number along the round's range, with the target marked. */
+function strip(round, outcome) {
+  const low = round.low, high = round.high, width = high - low || 1;
+  const at = value => Math.min(100, Math.max(0, (value - low) / width * 100));
+  const target = outcome.target === null || outcome.target === undefined ? "" :
+    `<div class="target" style="left:${at(outcome.target)}%"><span>${num(outcome.target)}</span></div>`;
+  const dots = outcome.picks.map(pick =>
+    `<div class="pick${pick.won ? " winner" : ""}" style="left:${at(pick.value)}%" title="${esc(pick.name)}: ${num(pick.value)}"></div>`
+  ).join("");
+  return `<div class="strip">${target}${dots}</div>
+    <div class="ends"><span>${num(low)}</span><span>${num(high)}</span></div>`;
+}
+
+function outcomeHtml(round, outcome) {
+  const winners = outcome.winners.length
+    ? `<p class="eyebrow">${outcome.winners.length === 1 ? "The winner" : "The winners"}</p>
+       <p class="big won">${esc(list(outcome.winners))}</p>`
+    : `<p class="eyebrow">Nobody won</p>
+       <p class="note" style="margin-top:8px">Every number was picked by more
+         than one person, so there was no unique one to win with.</p>`;
+  const facts = [
+    ["The average", num(outcome.mean)],
+    ["The middle number", num(outcome.median)],
+  ];
+  if (outcome.target !== null && outcome.target !== undefined) {
+    facts.unshift(["The number to aim at", num(outcome.target)]);
+  }
+  return `${winners}
+    ${strip(round, outcome)}
+    <div class="facts">${facts.map(([name, value]) =>
+      `<div class="fact"><span>${name}</span><b>${value}</b></div>`).join("")}</div>
+    <div class="scroll"><table><thead><tr><th>Who</th><th>Picked</th></tr></thead>
+      <tbody>${outcome.picks.map(pick => `<tr class="${pick.won ? "won" : ""}">
+        <td>${esc(pick.name)}${pick.won ? " ✓" : ""}</td><td>${num(pick.value)}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+}
+
+// ---------------------------------------------------------------- opening
+
+function start() {
+  show("start");
+  $("open").addEventListener("click", async () => {
+    $("open").disabled = true;
+    try {
+      const keys = await api("POST", "/api/rooms");
+      location.href = "/h/" + keys.host;
+    } catch (e) {
+      fail(e.message);
+      $("open").disabled = false;
+    }
+  });
+}
+
+// ------------------------------------------------------------------- host
+
+function host(key) {
+  show("host");
+  const at = path => `/api/h/${encodeURIComponent(key)}${path}`;
+  let now = {};
+
+  $("where").textContent = "You are the host";
+  $("rule").innerHTML = RULES.map(rule =>
+    `<option value="${rule.id}">${esc(rule.name)}</option>`).join("");
+
+  /** A rule brings its own range with it, until the host changes one. */
+  let rangeTouched = false;
+  for (const field of [$("low"), $("high")]) {
+    field.addEventListener("input", () => { rangeTouched = true; });
+  }
+  $("rule").addEventListener("change", () => {
+    if (rangeTouched) return;
+    const rule = RULES.find(rule => rule.id === $("rule").value);
+    $("low").value = rule.low;
+    $("high").value = rule.high;
+  });
+
+  $("start-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const rule = RULES.find(rule => rule.id === $("rule").value);
+    const body = {rule: rule.rule, low: $("low").valueAsNumber, high: $("high").valueAsNumber};
+    if (rule.num) { body.num = rule.num; body.den = rule.den; }
+    try { await api("POST", at("/start"), body); fail(""); } catch (e) { fail(e.message); }
+  });
+
+  $("close").addEventListener("click", async () => {
+    try { await api("PUT", at("/open"), {open: !now.round.open}); fail(""); } catch (e) { fail(e.message); }
+  });
+
+  $("reveal").addEventListener("click", async () => {
+    try { await api("POST", at("/reveal")); fail(""); } catch (e) { fail(e.message); }
+  });
+
+  let link = "";
+
+  function drawRoom(view) {
+    const next = location.origin + "/j/" + view.join;
+    if (next !== link) {
+      link = next;
+      $("join-link").textContent = link;
+      $("join-link").href = link;
+      fetch("/api/qr", {method: "POST", body: link})
+        .then(response => response.ok ? response.text() : "")
+        .then(svg => { $("join-qr").innerHTML = svg; });
+    }
+    $("who").innerHTML = view.players.length === 0
+      ? "Nobody has joined yet."
+      : `<span class="dot"></span> ${esc(plural(view.players.length, "person", "people"))} in the room`;
+  }
+
+  function drawBoard(view) {
+    if (!view.scores.length) { $("board").innerHTML = ""; return; }
+    $("board").innerHTML = `<h3 style="margin-top:30px">The evening so far</h3>
+      <div class="scroll"><table><thead><tr>
+        <th>Who</th><th>Rounds</th><th>Won</th><th>Picks on average</th>
+      </tr></thead><tbody>${view.scores.map(score => `<tr>
+        <td>${esc(score.name)}</td><td>${score.played}</td><td>${score.wins}</td>
+        <td>${num(score.average)}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function drawHistory(view) {
+    if (!view.history.length) { $("history").innerHTML = ""; return; }
+    $("history").innerHTML = `<h3 style="margin-top:30px">Played already</h3>
+      ${view.history.map(past => `<div class="past">
+        <span>${esc(past.label)}</span>
+        <span>${past.target === null ? "" : "aim " + num(past.target) + " · "}average ${num(past.mean)} · ${
+          past.winners.length ? esc(list(past.winners)) : "nobody"}</span>
+      </div>`).join("")}`;
+  }
+
+  function draw(view) {
+    now = view;
+    drawRoom(view);
+    $("playing").hidden = !view.round;
+    if (view.round) {
+      const round = view.round;
+      $("h-state").textContent = round.revealed ? "Revealed" : round.open ? "Open — taking numbers" : "Closed";
+      $("h-rule").textContent = round.label[0].toUpperCase() + round.label.slice(1);
+      $("h-range").textContent = `${num(round.low)} to ${num(round.high)}`
+        + (round.whole ? ", whole numbers" : "");
+      const picked = view.players.filter(who => who.picked).length;
+      $("progress").textContent = `${picked} of ${plural(view.players.length, "person", "people")} picked`
+        + (round.revealed ? "" : " · nobody sees a number until you reveal");
+      $("close").textContent = round.open ? "Stop taking numbers" : "Take more numbers";
+      $("close").disabled = round.revealed;
+      $("reveal").disabled = round.revealed;
+      $("reveal").textContent = round.revealed ? "Revealed" : "Reveal";
+      $("outcome").innerHTML = view.outcome ? outcomeHtml(round, view.outcome) : "";
+    }
+    drawBoard(view);
+    drawHistory(view);
+  }
+
+  api("GET", at("")).then(body => draw(body.view)).catch(e => fail(e.message));
+  watch(at("/events"), draw);
+}
+
+// ------------------------------------------------------------------- join
+
+function join(key) {
+  show("join");
+  const kept = localStorage.getItem("numbers:" + key);
+  if (kept) { location.replace("/p/" + kept); return; }
+
+  api("GET", `/api/j/${encodeURIComponent(key)}`).then(body => {
+    $("join-count").textContent = body.players === 0
+      ? "You are the first one in."
+      : plural(body.players, "person", "people") + " already in.";
+  }).catch(e => fail(e.message));
+
+  $("name-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      const body = await api("POST", `/api/j/${encodeURIComponent(key)}`, {name: $("name").value});
+      localStorage.setItem("numbers:" + key, body.player);
+      location.href = "/p/" + body.player;
+    } catch (e) { fail(e.message); }
+  });
+}
+
+// ----------------------------------------------------------------- player
+
+function player(key) {
+  show("player");
+  const at = path => `/api/p/${encodeURIComponent(key)}${path}`;
+  let filledFor = null;
+
+  $("pick-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const value = $("pick").valueAsNumber;
+    if (!isFinite(value)) { fail("Pick a number first."); return; }
+    try {
+      const body = await api("PUT", at("/pick"), {value});
+      draw(body.view);
+      fail("");
+    } catch (e) { fail(e.message); }
+  });
+
+  function draw(view) {
+    $("you").innerHTML = `<span class="dot"></span> You are ${esc(view.name)}`;
+    const round = view.round;
+    if (!round) {
+      $("p-state").textContent = "Waiting";
+      $("p-rule").textContent = "Waiting for the first round";
+      $("p-range").textContent = "";
+      $("pick-form").hidden = true;
+      $("p-closed").hidden = true;
+      $("p-outcome").innerHTML = "";
+      return;
+    }
+    $("p-state").textContent = round.revealed ? "Revealed" : round.open ? "Pick a number" : "Closed";
+    $("p-rule").textContent = round.label[0].toUpperCase() + round.label.slice(1);
+    $("p-range").textContent = `Anything from ${num(round.low)} to ${num(round.high)}`
+      + (round.whole ? ", whole numbers only." : ".");
+    $("pick-form").hidden = !round.open;
+    $("p-closed").hidden = round.open;
+    if (!round.open) {
+      $("p-closed").textContent = view.mine === null || view.mine === undefined
+        ? "You did not pick this round."
+        : `You picked ${num(view.mine)}.`;
+    }
+    $("pick").min = round.low;
+    $("pick").max = round.high;
+    $("pick").step = round.whole ? 1 : "any";
+    if (filledFor !== round.asked) {
+      filledFor = round.asked;
+      $("pick").value = view.mine === null || view.mine === undefined ? "" : view.mine;
+    }
+    $("mine").textContent = view.mine === null || view.mine === undefined
+      ? `${view.picked} of ${plural(view.players, "person", "people")} have picked.`
+      : `Sent: ${num(view.mine)}. You can change it until the host stops taking numbers.`;
+    $("p-outcome").innerHTML = view.outcome
+      ? `<div class="panel">${view.won === true
+          ? `<p class="eyebrow">You won this one</p>`
+          : view.won === false ? `<p class="eyebrow">You did not win this one</p>` : ""}
+         ${outcomeHtml(round, view.outcome)}
+         ${view.score && view.score.played ? `<p class="note" style="margin-top:16px">Your
+           evening: ${view.score.wins} of ${plural(view.score.played, "round", "rounds")} won,
+           picking ${num(view.score.average)} on average.</p>` : ""}</div>`
+      : "";
+  }
+
+  api("GET", at("")).then(body => draw(body.view)).catch(e => fail(e.message));
+  watch(at("/events"), draw);
+}
+
+const path = location.pathname.split("/").filter(part => part !== "");
+if (path.length === 2 && path[0] === "h") host(path[1]);
+else if (path.length === 2 && path[0] === "j") join(path[1]);
+else if (path.length === 2 && path[0] === "p") player(path[1]);
+else start();
+</script>
+</body>
+</html>
