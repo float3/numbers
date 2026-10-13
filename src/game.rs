@@ -84,7 +84,7 @@ impl Rule {
         match self {
             Rule::OfTheMean { num, den } | Rule::OfTheMedian { num, den } => {
                 if den == 0 || num == 0 || num > den || den > 9 {
-                    Err("That fraction is not one of the ones on offer.")
+                    Err("That fraction is not one of the ones this plays.")
                 } else {
                     Ok(())
                 }
