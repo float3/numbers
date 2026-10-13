@@ -5,10 +5,10 @@
 Number games for a room of people, at
 [numbers.rationality-munich.com](https://numbers.rationality-munich.com).
 
-Everyone picks a number, and the rule decides who wins. The rules all have
-the same shape: what your number is worth depends on what everybody else
-picked, so playing well means working out what the room will do — and what
-the room thinks the room will do.
+Everyone picks a number, and the rule decides who wins. In every rule here
+what a number is worth depends on what everybody else picked, so playing
+well means predicting what the room will do, including what the room
+predicts about itself.
 
 Built on [rooms](https://github.com/float3/rooms).
 
@@ -21,14 +21,15 @@ Built on [rooms](https://github.com/float3/rooms).
 | The lowest number nobody else picked | whole numbers; some rounds have no winner |
 | The highest number nobody else picked | |
 | The highest number below the average | going high wins until everybody goes high |
-| The number the most people pick | the other way round: meet the room rather than dodge it, and nobody wins if no two agree |
-| The number furthest from everybody else's | being where the room is is worth nothing, however clever the number |
+| The number the most people pick | the opposite of the unique rules, and nobody wins if no two people agree |
+| The number furthest from everybody else's | measured by the distance to the nearest other pick |
 | The highest number, under a limit | if everybody's numbers together come to more than the limit, nobody wins |
 
-The first one is the old Keynesian beauty contest. At a third of the
-average, the average cannot be more than a third of itself unless somebody
-is wrong, so the only number the whole room can hold is nought — and no
-room starts there. The interesting part is the second round.
+The first one is the Keynesian beauty contest. At a third of the average,
+the average cannot be more than a third of itself unless somebody is
+wrong, so the only number the whole room can hold is nought, and no room
+picks that in the first round. Play it twice and watch where the second
+round lands.
 
 ## Nobody sees a number until the reveal
 
@@ -46,9 +47,9 @@ at.
 | `/j/<key>` | joins it. This is the one on the wall. |
 | `/p/<key>` | one player's own, kept by their phone. |
 
-The key in the link is the whole access model: 24 random characters and no
-accounts. See [rooms](https://github.com/float3/rooms) for what that is and
-is not good for.
+The key in the link is the only access control: 24 random characters, and
+no accounts. See [rooms](https://github.com/float3/rooms) for what that
+does and does not protect.
 
 ## Running it
 

@@ -1,12 +1,12 @@
 //! Everyone picks a number, and the rule decides who wins.
 //!
-//! The oldest of these is the one where the number to aim at is a fraction
-//! of what everybody else picks: if the winner is whoever comes closest to
-//! a third of the average, then the average cannot be above a third of
-//! itself, so the only number everybody can hold is nought — and a room of
-//! people never gets there on the first round. Playing it twice is the
-//! point. The others in here are different shapes of the same idea: a
-//! number whose worth depends on what the rest of the room does.
+//! The oldest of these rules aims at a fraction of what everybody else
+//! picks. If the winner is whoever comes closest to a third of the
+//! average, the average cannot be above a third of itself, so the only
+//! number the whole room can hold is nought, and no room picks that in
+//! the first round. The second round is where it gets interesting. The
+//! other rules here work the same way: what a number is worth depends on
+//! what everybody else picked.
 
 use std::collections::HashMap;
 
@@ -15,41 +15,42 @@ use serde::{Deserialize, Serialize};
 pub const MAX_PLAYERS: usize = 200;
 pub const MAX_ROUNDS: usize = 200;
 pub const MAX_NAME: usize = 32;
-/// The widest range a round can be played over. Wide enough for nought to
-/// a hundred, which is the usual board.
+/// The widest range a round can be played over, which is far wider than
+/// the nought to a hundred these are usually played on.
 pub const LIMIT: f64 = 1_000_000.0;
 
 /// What decides the winner.
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "rule", rename_all = "kebab-case")]
 pub enum Rule {
-    /// Closest to `num`/`den` of the average. The classic, at 1/3 or 2/3.
+    /// Closest to `num`/`den` of the average, usually 1/3 or 2/3.
     OfTheMean { num: u32, den: u32 },
-    /// Closest to `num`/`den` of the middle number. Harder to move with
-    /// one silly answer than the average is.
+    /// Closest to `num`/`den` of the middle number. One extreme answer
+    /// moves the median much less than it moves the average.
     OfTheMedian { num: u32, den: u32 },
-    /// The lowest number nobody else picked. Whole numbers, and there may
-    /// be no winner at all.
+    /// The lowest number nobody else picked. Whole numbers only, and
+    /// some rounds have no winner.
     LowestUnique,
     /// The highest number nobody else picked.
     HighestUnique,
-    /// The highest number that is still below the average. Going high wins
-    /// until everybody does it.
+    /// The highest number still below the average. Picking high wins
+    /// until everybody picks high.
     UnderTheMean,
-    /// The number the most people picked. The other way round from the
-    /// unique rules: here you are trying to meet the room, not dodge it.
-    /// Nobody wins if no two people agreed.
+    /// The number the most people picked. The opposite of the unique
+    /// rules: the aim is to pick what others pick. Nobody wins if no two
+    /// people agreed.
     MostPopular,
-    /// The number furthest from anybody else's. The one person who went
-    /// somewhere nobody else thought of.
+    /// The number furthest from anybody else's, measured by the distance
+    /// to the nearest other pick.
     Loneliest,
-    /// The highest number wins, but only if everybody's numbers add up to
-    /// no more than the limit. Ask for a lot and the room gets nothing.
+    /// The highest number wins, but only if everybody's numbers add up
+    /// to no more than the limit. If the room asks for too much, nobody
+    /// wins.
     UnderTheLimit { limit: f64 },
 }
 
 impl Rule {
-    /// How the rule is put to the room, in the room's words.
+    /// The rule as it is shown to the room.
     pub fn label(self) -> String {
         match self {
             Rule::OfTheMean { num: 1, den: 1 } => "closest to the average".into(),
@@ -69,9 +70,9 @@ impl Rule {
         }
     }
 
-    /// Whether picks have to be whole numbers. Picking the same number as
-    /// somebody else — or deliberately not — only means anything if there
-    /// are a countable number of numbers to pick.
+    /// Whether picks have to be whole numbers. Matching somebody else's
+    /// number, or avoiding it, only means something when there is a
+    /// countable set of numbers to pick from.
     pub fn whole_only(self) -> bool {
         matches!(
             self,
@@ -115,9 +116,9 @@ fn median(picks: &[f64]) -> f64 {
     }
 }
 
-/// How close two picks have to be before they are the same pick. Picks
-/// come off a phone keyboard, so this only matters for a target landing
-/// exactly between two of them.
+/// How close two numbers have to be to count as equal. Picks are typed on
+/// a phone, so this only matters when a target lands exactly between two
+/// of them.
 const SAME: f64 = 1e-9;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -138,8 +139,8 @@ pub struct Round {
     pub low: f64,
     pub high: f64,
     pub open: bool,
-    /// Until this, nobody — the host included — is sent anybody's pick.
-    /// The host screen is often the one on the wall.
+    /// Until this is true, nobody is sent anybody's pick, including the
+    /// host, whose screen is often the one on the wall.
     pub revealed: bool,
     pub asked: u64,
     /// By player key.
@@ -195,8 +196,8 @@ impl Game {
         self.players.iter().find(|p| p.key == key)
     }
 
-    /// As in the estimation game: a name already in the room gives back
-    /// that player's key, so a phone that lost its link can walk back in.
+    /// As in the estimation game, a name already in the room returns
+    /// that player's key, so a phone that lost its link can rejoin.
     pub fn join(&mut self, name: &str, now: u64) -> Result<String, &'static str> {
         let name = tidy(name, MAX_NAME);
         if name.is_empty() {
@@ -259,8 +260,8 @@ impl Game {
         Ok(())
     }
 
-    /// Shows the room everybody's number and who won. The round stops
-    /// taking picks at the same moment.
+    /// Shows everybody the numbers and the winner, and stops taking
+    /// picks.
     pub fn reveal(&mut self) -> Result<(), &'static str> {
         let round = self.round_mut()?;
         round.open = false;
@@ -292,8 +293,8 @@ impl Game {
     }
 }
 
-/// What one player picked, with their name on it. Only ever built for a
-/// revealed round.
+/// What one player picked, with their name. Only built for a revealed
+/// round.
 #[derive(Serialize)]
 pub struct Chosen {
     pub name: String,
@@ -301,18 +302,18 @@ pub struct Chosen {
     pub won: bool,
 }
 
-/// How a round came out.
+/// The result of a round.
 #[derive(Serialize)]
 pub struct Outcome {
     pub n: usize,
     pub mean: f64,
     pub median: f64,
-    /// The number the room was aiming at, for the rules that have one.
+    /// The number to aim at, for the rules that have one.
     pub target: Option<f64>,
-    /// What the rule was, said again next to the numbers.
+    /// The rule, repeated next to the numbers.
     pub label: String,
     pub winners: Vec<String>,
-    /// Everybody's pick, lowest first.
+    /// Every pick, lowest first.
     pub picks: Vec<Chosen>,
 }
 
@@ -328,9 +329,9 @@ impl Round {
             .collect()
     }
 
-    /// Who won, by the round's rule. Empty when nobody did, which the
-    /// unique rules allow: if every number is a duplicate, there is no
-    /// lowest unique one.
+    /// Who won, by the round's rule. Empty when nobody did, which
+    /// several of the rules allow: if every number is a duplicate, there
+    /// is no lowest unique one.
     fn winners<'a>(&self, named: &[(&'a str, f64)]) -> Vec<&'a str> {
         let values: Vec<f64> = named.iter().map(|(_, value)| *value).collect();
         match self.rule {
@@ -371,7 +372,7 @@ impl Round {
                 }
                 let most = counts.values().copied().max().unwrap_or(0);
                 if most < 2 {
-                    return Vec::new(); // no two people agreed on anything
+                    return Vec::new(); // no two people agreed
                 }
                 let agreed: Vec<i64> = counts
                     .iter()
@@ -386,7 +387,7 @@ impl Round {
             }
             Rule::Loneliest => {
                 if values.len() < 2 {
-                    return Vec::new(); // nobody to be far from
+                    return Vec::new(); // there is nobody else to be far from
                 }
                 let loneliness = |mine: f64| {
                     values
@@ -396,8 +397,9 @@ impl Round {
                         .map(|(_, other)| (other - mine).abs())
                         .fold(f64::INFINITY, f64::min)
                 };
-                // Everybody who picked the same number is nought from
-                // somebody, so a room where everyone agrees has no winner.
+                // Anybody who picked the same number as somebody else is
+                // nought away from them, so a room that all picked the
+                // same number has no winner.
                 let furthest = named
                     .iter()
                     .map(|(_, bound)| loneliness(*bound))
@@ -414,7 +416,7 @@ impl Round {
             }
             Rule::UnderTheLimit { limit } => {
                 if values.iter().sum::<f64>() > limit + SAME {
-                    return Vec::new(); // the room asked for too much
+                    return Vec::new(); // the total went over the limit
                 }
                 let best = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 named
@@ -458,8 +460,8 @@ impl Round {
             Rule::OfTheMean { num, den } => Some(mean(values) * num as f64 / den as f64),
             Rule::OfTheMedian { num, den } => Some(median(values) * num as f64 / den as f64),
             Rule::UnderTheMean => Some(mean(values)),
-            // There is no number to aim at in any of these: what wins
-            // depends on the shape of the whole room, not on one number.
+            // None of these have a number to aim at. What wins depends
+            // on the distribution of all the picks.
             Rule::LowestUnique
             | Rule::HighestUnique
             | Rule::MostPopular
@@ -500,21 +502,21 @@ impl Round {
     }
 }
 
-/// How one player's evening has gone.
+/// One player's results over the evening.
 #[derive(Serialize)]
 pub struct Score {
     pub name: String,
     pub played: usize,
     pub wins: usize,
-    /// What they pick on average, which is the number that moves as a room
-    /// works a rule out.
+    /// Their mean pick, which is the number that moves as a room works
+    /// a rule out.
     pub average: Option<f64>,
 }
 
 impl Game {
-    /// The evening so far, most wins first, over the revealed rounds only —
-    /// a tally including the round being played would give away who is
-    /// winning it.
+    /// The evening so far, most wins first, over the revealed rounds
+    /// only. A tally that included the round being played would give away
+    /// who was winning it.
     pub fn scores(&self) -> Vec<Score> {
         let revealed: Vec<&Round> = self.rounds.iter().filter(|round| round.revealed).collect();
         let mut scores: Vec<Score> = self

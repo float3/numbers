@@ -1,7 +1,7 @@
 // The number games, in a browser.
 //
-// Three screens, one page: the one that opens a room, the host's, and the
-// one almost everybody is looking at, which is a phone.
+// One page with three screens: the one that opens a room, the host's, and
+// the player's, which is almost always a phone.
 
 import {
   api,
@@ -93,14 +93,14 @@ interface PlayerView {
   score: Score | null;
 }
 
-/** What a rule is sent as, and what to put in the range fields for it. */
+/** How a rule is sent, and the range to start the fields at. */
 interface Preset {
   id: string;
   name: string;
   rule: string;
   num?: number;
   den?: number;
-  /** Only the limit game has one, and only it shows the field. */
+  /** Only the limit rule has one, and only it shows the field. */
   limit?: number;
   low: number;
   high: number;
@@ -204,7 +204,7 @@ const chosen = (): Preset =>
 const sentence = (said: string): string =>
   said.charAt(0).toUpperCase() + said.slice(1);
 
-/** Everybody's number along the round's range, with the target marked. */
+/** Every number along the round's range, with the target marked. */
 function strip(round: Playing, outcome: Outcome): string {
   const width = round.high - round.low || 1;
   const at = (given: number) =>
@@ -287,7 +287,7 @@ function host(key: string): void {
     ).join(""),
   );
 
-  /** A rule brings its own range with it, until the host changes one. */
+  /** Each rule has a range to start from, until the host edits one. */
   let touched = false;
   for (const id of ["low", "high"]) {
     byId(id).addEventListener("input", () => {

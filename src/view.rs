@@ -1,8 +1,8 @@
 //! What each screen is sent.
 //!
-//! Nobody is sent anybody else's number until the host reveals the round —
-//! the host included, because the host's screen is often the one on the
-//! wall. Until then, every screen gets the rule, the range, and a count.
+//! Nobody is sent anybody else's number until the host reveals the round.
+//! That includes the host, whose screen is often the one on the wall.
+//! Until the reveal, every screen gets the rule, the range and a count.
 
 use serde::Serialize;
 
@@ -16,7 +16,7 @@ pub struct Who<'a> {
 
 #[derive(Serialize)]
 pub struct Playing {
-    /// The rule in words, which is all a screen needs of it.
+    /// The rule in words, which is all a screen needs.
     label: String,
     low: f64,
     high: f64,
@@ -41,9 +41,9 @@ pub struct Host<'a> {
     join: &'a str,
     players: Vec<Who<'a>>,
     round: Option<Playing>,
-    /// Only once the round has been revealed.
+    /// Only after the round has been revealed.
     outcome: Option<Outcome>,
-    /// Newest first, the round being played excluded.
+    /// Newest first, excluding the round being played.
     history: Vec<Past>,
     scores: Vec<Score>,
 }
@@ -52,7 +52,7 @@ pub struct Host<'a> {
 pub struct Player<'a> {
     name: &'a str,
     round: Option<Playing>,
-    /// This player's own number, which they can change until the round
+    /// This player's number, which they can change until the round
     /// closes.
     mine: Option<f64>,
     picked: usize,

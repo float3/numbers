@@ -1,12 +1,12 @@
 //! Number games for a room of people.
 //!
-//! The host picks a rule and a range, everyone picks a number from their
-//! phone, and the rule decides who won. Nothing is shown to anybody until
-//! the host reveals the round.
+//! The host picks a rule and a range, everyone picks a number on their
+//! phone, and the rule decides who won. No number is shown to anybody
+//! until the host reveals the round.
 //!
-//! Three kinds of link, and the key in each is all the authority there is:
-//! `/h/<key>` runs the room, `/j/<key>` joins it, `/p/<key>` is one
-//! player's own.
+//! There are three kinds of link, and the key in each is the only
+//! authority there is: `/h/<key>` runs the room, `/j/<key>` joins it, and
+//! `/p/<key>` belongs to one player.
 
 mod game;
 mod view;
@@ -33,7 +33,7 @@ const ICON: &str = include_str!("../static/icon.svg");
 const APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
 const APP_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
 
-/// How many rooms at once. A cap because anyone can open one.
+/// How many rooms at once. Limited because anyone can open one.
 const MAX_ROOMS: usize = 2000;
 /// How often to look for rooms nobody has opened in a day.
 const SWEEP: Duration = Duration::from_secs(5 * 60);
@@ -44,8 +44,8 @@ fn refused(message: &str) -> Response {
     http::error(StatusCode::CONFLICT, message)
 }
 
-/// A host action: do the thing to the room, send the host's view back, so
-/// the screen that pressed the button does not wait for its own stream.
+/// Applies a host action to the room and returns the host's view, so the
+/// screen that pressed the button does not wait for its own stream.
 async fn act(
     rooms: &Rooms<Game>,
     key: &str,
@@ -137,7 +137,7 @@ async fn reveal(State(rooms): State<Shared>, Path(key): Path<String>) -> Respons
     act(&rooms, &key, |game, _| game.reveal()).await
 }
 
-/// A player's link carries the room's join key, not the room's own.
+/// A player's link carries the room's join key rather than its own key.
 async fn room_with_join(rooms: &Rooms<Game>, join: &str) -> Option<String> {
     let join = join.to_string();
     rooms
@@ -163,8 +163,8 @@ async fn join(
     }
 }
 
-/// How many are already in, which is what the join page has to say for
-/// itself before anyone gives a name.
+/// How many people are already in, which is what the join page shows
+/// before anyone gives a name.
 async fn how_many(State(rooms): State<Shared>, Path(join): Path<String>) -> Response {
     let Some(key) = room_with_join(&rooms, &join).await else {
         return http::gone();
@@ -217,8 +217,8 @@ async fn pick(
     }
 }
 
-/// A link as a QR code for the wall. The page sends the link it wants
-/// rather than this guessing at the host name it is served under.
+/// A link as a QR code. The page sends the link it wants, rather than
+/// this guessing at the host name it is served under.
 async fn qr_code(body: Bytes) -> Response {
     match std::str::from_utf8(&body) {
         Ok(link) => qr::response(link),

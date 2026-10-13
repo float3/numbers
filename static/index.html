@@ -22,13 +22,14 @@
   <section id="screen-start" hidden>
     <p class="eyebrow">For a room of people</p>
     <h1>Everyone picks a number</h1>
-    <p class="lead">The rule says which number wins, and the rule depends on
-      what everybody else picks. Pick a third of the average and you have to
-      guess what the room will do — and what the room thinks the room will do.</p>
+    <p class="lead">The rule says which number wins, and every rule depends
+      on what everybody else picks. To aim at a third of the average you have
+      to predict what the room will pick, which means predicting what the room
+      predicts about itself.</p>
     <div class="actions"><button class="button primary" id="open">Open a room</button></div>
-    <p class="note" id="start-note">Nothing to install and nobody signs up. The
-      link to the room is the only key there is, so keep the host link: it is the
-      way back in.</p>
+    <p class="note" id="start-note">There is nothing to install and nobody
+      signs up. The link is the only key, so keep the host link: it is the only
+      way back into the room.</p>
     <div class="prose">
       <h2>The rules on offer</h2>
       <ul>
@@ -39,16 +40,18 @@
         <li><b>Closest to a fraction of the middle number.</b> The same game,
           except that one person answering a million does not drag the target
           with them.</li>
-        <li><b>The lowest number nobody else picked.</b> One is the best number
-          and therefore the worst one. Some rounds have no winner at all.</li>
+        <li><b>The lowest number nobody else picked.</b> One wins if you are
+          the only person to pick it, which is why several people will. Some
+          rounds have no winner.</li>
         <li><b>The highest number nobody else picked.</b></li>
         <li><b>The highest number below the average.</b> Going high wins until
           everybody goes high.</li>
-        <li><b>The number the most people pick.</b> The other way round: here
-          you are trying to meet the room rather than dodge it, and nobody wins
-          if no two people agree.</li>
-        <li><b>The number furthest from everybody else's.</b> Worth nothing to
-          be where the room is, however clever the number.</li>
+        <li><b>The number the most people pick.</b> The opposite of the two
+          rules above: here you are trying to pick what others pick, and nobody
+          wins if no two people agree.</li>
+        <li><b>The number furthest from everybody else's.</b> Measured by the
+          distance to the nearest other pick, so a clever number that somebody
+          else also picked is worth nothing.</li>
         <li><b>The highest number, if the room's total stays under the limit.</b>
           Ask for a lot and the room gets nothing.</li>
       </ul>
@@ -56,8 +59,9 @@
       <ol>
         <li>You open a room and put the join link on the wall.</li>
         <li>You start a round: a rule and a range.</li>
-        <li>Everyone picks a number on their phone. Nobody sees anybody else's,
-          and neither do you — this screen may be the one on the wall.</li>
+        <li>Everyone picks a number on their phone. Nobody sees anybody
+          else's, including you, because this screen may be the one on the
+          wall.</li>
         <li>You reveal. Everybody sees every number at once, and who won.</li>
       </ol>
     </div>
@@ -109,8 +113,8 @@
     <form class="panel" id="name-form">
       <label for="name">Your name</label>
       <input id="name" maxlength="32" required autocomplete="nickname" autocapitalize="words">
-      <p class="note">Everyone sees this beside your number once the round is
-        revealed.</p>
+      <p class="note">Everyone sees this next to your number once the round
+        is revealed.</p>
       <div class="actions"><button class="button primary" type="submit">Join</button></div>
     </form>
     <p class="note" id="join-count"></p>

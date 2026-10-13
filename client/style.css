@@ -1,7 +1,7 @@
-/* The number games' own few rules. Everything else is rooms.css. */
+/* The rules specific to the number games. The rest is rooms.css. */
 
-/* Once somebody is in, the QR code has done its job and the round wants
- * the screen. */
+/* Once somebody has joined, the QR code is no longer the thing to look
+ * at, so it shrinks and leaves the screen to the round. */
 #room.tight .qr svg {
   width: 112px;
 }
@@ -10,8 +10,8 @@
   font-size: 0.85rem;
 }
 
-/* Everybody's number along the range, with the target marked. The room
- * reads the shape of a round off this faster than off the table. */
+/* Every number along the range, with the target marked. The spread of a
+ * round is quicker to read here than in the table below it. */
 .strip {
   position: relative;
   height: 54px;
