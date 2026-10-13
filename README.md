@@ -5,10 +5,8 @@
 Number games for a room of people, at
 [numbers.rationality-munich.com](https://numbers.rationality-munich.com).
 
-Everyone picks a number, and the rule decides who wins. In every rule here
-what a number is worth depends on what everybody else picked, so playing
-well means predicting what the room will do, including what the room
-predicts about itself.
+Everyone picks a number, and the rule decides who wins. Under every rule
+here, what a number is worth depends on what everybody else picked.
 
 Built on [rooms](https://github.com/float3/rooms).
 
@@ -17,19 +15,16 @@ Built on [rooms](https://github.com/float3/rooms).
 | | |
 | --- | --- |
 | Closest to a fraction of the average | 1/3, 1/2, 2/3, or the average itself |
-| Closest to a fraction of the middle number | the same game, where one silly answer cannot drag the target |
+| Closest to a fraction of the middle number | the same fractions |
 | The lowest number nobody else picked | whole numbers; some rounds have no winner |
 | The highest number nobody else picked | |
-| The highest number below the average | going high wins until everybody goes high |
-| The number the most people pick | the opposite of the unique rules, and nobody wins if no two people agree |
-| The number furthest from everybody else's | measured by the distance to the nearest other pick |
-| The highest number, under a limit | if everybody's numbers together come to more than the limit, nobody wins |
+| The highest number below the average | |
+| The number the most people pick | nobody wins if no two people pick the same number |
+| The number furthest from everybody else's | measured to the nearest other pick |
+| The highest number, under a limit | over the limit, nobody wins |
 
-The first one is the Keynesian beauty contest. At a third of the average,
-the average cannot be more than a third of itself unless somebody is
-wrong, so the only number the whole room can hold is nought, and no room
-picks that in the first round. Play it twice and watch where the second
-round lands.
+The first one is the Keynesian beauty contest. The pages state the rules
+and nothing else: working out what to pick is the game.
 
 ## Nobody sees a number until the reveal
 

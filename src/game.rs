@@ -1,12 +1,8 @@
 //! Everyone picks a number, and the rule decides who wins.
 //!
-//! The oldest of these rules aims at a fraction of what everybody else
-//! picks. If the winner is whoever comes closest to a third of the
-//! average, the average cannot be above a third of itself, so the only
-//! number the whole room can hold is nought, and no room picks that in
-//! the first round. The second round is where it gets interesting. The
-//! other rules here work the same way: what a number is worth depends on
-//! what everybody else picked.
+//! Under every rule here, what a number is worth depends on what everybody
+//! else picked. The oldest of them, closest to a fraction of the average,
+//! is the Keynesian beauty contest.
 
 use std::collections::HashMap;
 
@@ -25,27 +21,23 @@ pub const LIMIT: f64 = 1_000_000.0;
 pub enum Rule {
     /// Closest to `num`/`den` of the average, usually 1/3 or 2/3.
     OfTheMean { num: u32, den: u32 },
-    /// Closest to `num`/`den` of the middle number. One extreme answer
-    /// moves the median much less than it moves the average.
+    /// Closest to `num`/`den` of the middle number.
     OfTheMedian { num: u32, den: u32 },
     /// The lowest number nobody else picked. Whole numbers only, and
     /// some rounds have no winner.
     LowestUnique,
     /// The highest number nobody else picked.
     HighestUnique,
-    /// The highest number still below the average. Picking high wins
-    /// until everybody picks high.
+    /// The highest number still below the average.
     UnderTheMean,
-    /// The number the most people picked. The opposite of the unique
-    /// rules: the aim is to pick what others pick. Nobody wins if no two
-    /// people agreed.
+    /// The number the most people picked. Nobody wins if no two people
+    /// picked the same number.
     MostPopular,
     /// The number furthest from anybody else's, measured by the distance
     /// to the nearest other pick.
     Loneliest,
     /// The highest number wins, but only if everybody's numbers add up
-    /// to no more than the limit. If the room asks for too much, nobody
-    /// wins.
+    /// to no more than the limit. Over the limit, nobody wins.
     UnderTheLimit { limit: f64 },
 }
 
@@ -70,9 +62,8 @@ impl Rule {
         }
     }
 
-    /// Whether picks have to be whole numbers. Matching somebody else's
-    /// number, or avoiding it, only means something when there is a
-    /// countable set of numbers to pick from.
+    /// Whether picks have to be whole numbers. Matching another pick, or
+    /// avoiding one, needs a countable set of numbers to pick from.
     pub fn whole_only(self) -> bool {
         matches!(
             self,
