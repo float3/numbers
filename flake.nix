@@ -29,8 +29,8 @@
           # Cargo.lock, run
           #   nix run nixpkgs#nix-prefetch-git -- --url https://github.com/float3/rooms --rev <rev>
           # and put the hash it prints here.
-          outputHashes."rooms-0.1.0" = "sha256-bXsEGebQmhKGJjYAA7IZtuB09jgZLqAByq0oiC3VrVU=";
-          outputHashes."rooms-client-0.1.0" = "sha256-bXsEGebQmhKGJjYAA7IZtuB09jgZLqAByq0oiC3VrVU=";
+          outputHashes."rooms-0.1.0" = "sha256-BQCh2LPubxyfrdzdUlkGiNw7smu2l3ZrMmSbU0aRMzQ=";
+          outputHashes."rooms-client-0.1.0" = "sha256-BQCh2LPubxyfrdzdUlkGiNw7smu2l3ZrMmSbU0aRMzQ=";
         };
         meta.mainProgram = "numbers";
       };
@@ -68,10 +68,20 @@
       };
 
       config = lib.mkIf cfg.enable {
+        # systemd holds the port and passes it in, so the server itself
+        # needs no network: nginx reaches it through the socket, and it
+        # cannot reach anything, not even the other services on loopback.
+        systemd.sockets.numbers = {
+          description = "Number games socket";
+          wantedBy = ["sockets.target"];
+          listenStreams = ["127.0.0.1:${toString cfg.port}"];
+        };
+
         systemd.services.numbers = {
           description = "Number games";
           wantedBy = ["multi-user.target"];
-          after = ["network.target"];
+          requires = ["numbers.socket"];
+          after = ["numbers.socket"];
           environment = {
             NUMBERS_ADDR = "127.0.0.1:${toString cfg.port}";
             NUMBERS_STATE = "/var/lib/numbers/rooms.json";
@@ -82,6 +92,41 @@
             StateDirectory = "numbers";
             Restart = "always";
             RestartSec = 1;
+
+            PrivateNetwork = true;
+            IPAddressDeny = "any";
+            # Serving the passed socket needs no new sockets of any kind.
+            RestrictAddressFamilies = "none";
+            # Only its own state directory under /var/lib; the rest is hidden.
+            TemporaryFileSystem = "/var/lib:ro";
+            InaccessiblePaths = ["-/mnt" "-/media" "-/srv"];
+            ProtectHome = true;
+            ProtectSystem = "strict";
+            PrivateTmp = true;
+            PrivateDevices = true;
+            DevicePolicy = "closed";
+            PrivateUsers = true;
+            PrivateIPC = true;
+            ProtectProc = "invisible";
+            ProcSubset = "pid";
+            ProtectClock = true;
+            ProtectHostname = true;
+            ProtectKernelLogs = true;
+            ProtectKernelModules = true;
+            ProtectKernelTunables = true;
+            ProtectControlGroups = true;
+            CapabilityBoundingSet = "";
+            NoNewPrivileges = true;
+            RestrictNamespaces = true;
+            RestrictRealtime = true;
+            RestrictSUIDSGID = true;
+            LockPersonality = true;
+            MemoryDenyWriteExecute = true;
+            RemoveIPC = true;
+            SystemCallArchitectures = "native";
+            SystemCallFilter = ["@system-service" "~@privileged @resources"];
+            SystemCallErrorNumber = "EPERM";
+            UMask = "0077";
           };
         };
 
