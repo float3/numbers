@@ -28,6 +28,10 @@ use game::{Game, Rule};
 
 const INDEX: &str = include_str!("../static/index.html");
 const ICON: &str = include_str!("../static/icon.svg");
+/// The page's own half, compiled from the TypeScript in `client/` by the
+/// build script. Nothing here is written in JavaScript.
+const APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
+const APP_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
 
 /// How many rooms at once. A cap because anyone can open one.
 const MAX_ROOMS: usize = 2000;
@@ -230,6 +234,30 @@ async fn page() -> Html<&'static str> {
     Html(INDEX)
 }
 
+/// The compiled page. Named without a hash, so it is revalidated rather
+/// than cached: a room is opened once and the page is small.
+async fn script() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        APP_JS,
+    )
+        .into_response()
+}
+
+async fn stylesheet() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        APP_CSS,
+    )
+        .into_response()
+}
+
 async fn icon() -> Response {
     (
         [
@@ -248,6 +276,8 @@ fn router(rooms: Shared) -> Router {
         .route("/j/{key}", get(page))
         .route("/p/{key}", get(page))
         .route("/icon.svg", get(icon))
+        .route("/app.js", get(script))
+        .route("/app.css", get(stylesheet))
         .route("/api/time", get(time))
         .route("/api/qr", post(qr_code))
         .route("/api/rooms", post(open_room))

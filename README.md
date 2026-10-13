@@ -21,6 +21,9 @@ Built on [rooms](https://github.com/float3/rooms).
 | The lowest number nobody else picked | whole numbers; some rounds have no winner |
 | The highest number nobody else picked | |
 | The highest number below the average | going high wins until everybody goes high |
+| The number the most people pick | the other way round: meet the room rather than dodge it, and nobody wins if no two agree |
+| The number furthest from everybody else's | being where the room is is worth nothing, however clever the number |
+| The highest number, under a limit | if everybody's numbers together come to more than the limit, nobody wins |
 
 The first one is the old Keynesian beauty contest. At a third of the
 average, the average cannot be more than a third of itself unless somebody
@@ -71,6 +74,11 @@ services.numbers = {
 Rooms are forgotten a day after anyone last looked at one.
 
 ## Development
+
+The page is TypeScript in `client/`, compiled into the binary by the build
+script with [rooms-client](https://github.com/float3/rooms). `esbuild`
+bundles it and `tsc` checks it, both from the dev shell. No JavaScript is
+written by hand here.
 
 ```sh
 nix develop --command cargo test

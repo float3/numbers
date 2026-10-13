@@ -1,0 +1,72 @@
+/* The number games' own few rules. Everything else is rooms.css. */
+
+/* Once somebody is in, the QR code has done its job and the round wants
+ * the screen. */
+#room.tight .qr svg {
+  width: 112px;
+}
+
+#room.tight .link {
+  font-size: 0.85rem;
+}
+
+/* Everybody's number along the range, with the target marked. The room
+ * reads the shape of a round off this faster than off the table. */
+.strip {
+  position: relative;
+  height: 54px;
+  margin-top: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.strip .pick {
+  position: absolute;
+  bottom: -5px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--body);
+  transform: translateX(-50%);
+}
+
+.strip .pick.winner {
+  background: var(--gold);
+  width: 15px;
+  height: 15px;
+  bottom: -7px;
+  border: 1px solid var(--ink);
+}
+
+.strip .target {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--mark);
+  transform: translateX(-50%);
+}
+
+.strip .target span {
+  position: absolute;
+  top: -2px;
+  left: 6px;
+  font-size: 0.72rem;
+  color: var(--mark);
+  white-space: nowrap;
+}
+
+.ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--body);
+  margin-top: 6px;
+}
+
+h3 {
+  margin-top: 24px;
+}
+
+#outcome:not(:empty) {
+  margin-top: 20px;
+}

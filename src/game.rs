@@ -36,6 +36,16 @@ pub enum Rule {
     /// The highest number that is still below the average. Going high wins
     /// until everybody does it.
     UnderTheMean,
+    /// The number the most people picked. The other way round from the
+    /// unique rules: here you are trying to meet the room, not dodge it.
+    /// Nobody wins if no two people agreed.
+    MostPopular,
+    /// The number furthest from anybody else's. The one person who went
+    /// somewhere nobody else thought of.
+    Loneliest,
+    /// The highest number wins, but only if everybody's numbers add up to
+    /// no more than the limit. Ask for a lot and the room gets nothing.
+    UnderTheLimit { limit: f64 },
 }
 
 impl Rule {
@@ -51,13 +61,22 @@ impl Rule {
             Rule::LowestUnique => "the lowest number nobody else picked".into(),
             Rule::HighestUnique => "the highest number nobody else picked".into(),
             Rule::UnderTheMean => "the highest number below the average".into(),
+            Rule::MostPopular => "the number the most people picked".into(),
+            Rule::Loneliest => "the number furthest from everybody else's".into(),
+            Rule::UnderTheLimit { limit } => {
+                format!("the highest number, if everybody's together come to no more than {limit}")
+            }
         }
     }
 
-    /// Whether picks have to be whole numbers. Unique only means anything
-    /// if they are: with decimals, everybody is unique.
+    /// Whether picks have to be whole numbers. Picking the same number as
+    /// somebody else — or deliberately not — only means anything if there
+    /// are a countable number of numbers to pick.
     pub fn whole_only(self) -> bool {
-        matches!(self, Rule::LowestUnique | Rule::HighestUnique)
+        matches!(
+            self,
+            Rule::LowestUnique | Rule::HighestUnique | Rule::MostPopular
+        )
     }
 
     fn valid(self) -> Result<(), &'static str> {
@@ -67,6 +86,13 @@ impl Rule {
                     Err("That fraction is not one of the ones on offer.")
                 } else {
                     Ok(())
+                }
+            }
+            Rule::UnderTheLimit { limit } => {
+                if limit.is_finite() && limit > 0.0 {
+                    Ok(())
+                } else {
+                    Err("The limit has to be a number above nought.")
                 }
             }
             _ => Ok(()),
@@ -338,6 +364,65 @@ impl Round {
                     .map(|(name, _)| *name)
                     .collect()
             }
+            Rule::MostPopular => {
+                let mut counts: HashMap<i64, usize> = HashMap::new();
+                for value in &values {
+                    *counts.entry(*value as i64).or_default() += 1;
+                }
+                let most = counts.values().copied().max().unwrap_or(0);
+                if most < 2 {
+                    return Vec::new(); // no two people agreed on anything
+                }
+                let agreed: Vec<i64> = counts
+                    .iter()
+                    .filter(|(_, count)| **count == most)
+                    .map(|(value, _)| *value)
+                    .collect();
+                named
+                    .iter()
+                    .filter(|(_, value)| agreed.contains(&(*value as i64)))
+                    .map(|(name, _)| *name)
+                    .collect()
+            }
+            Rule::Loneliest => {
+                if values.len() < 2 {
+                    return Vec::new(); // nobody to be far from
+                }
+                let loneliness = |mine: f64| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, other)| **other != mine)
+                        .map(|(_, other)| (other - mine).abs())
+                        .fold(f64::INFINITY, f64::min)
+                };
+                // Everybody who picked the same number is nought from
+                // somebody, so a room where everyone agrees has no winner.
+                let furthest = named
+                    .iter()
+                    .map(|(_, bound)| loneliness(*bound))
+                    .filter(|d| d.is_finite())
+                    .fold(0.0_f64, f64::max);
+                if furthest <= 0.0 {
+                    return Vec::new();
+                }
+                named
+                    .iter()
+                    .filter(|(_, value)| (loneliness(*value) - furthest).abs() <= SAME)
+                    .map(|(name, _)| *name)
+                    .collect()
+            }
+            Rule::UnderTheLimit { limit } => {
+                if values.iter().sum::<f64>() > limit + SAME {
+                    return Vec::new(); // the room asked for too much
+                }
+                let best = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                named
+                    .iter()
+                    .filter(|(_, value)| (value - best).abs() <= SAME)
+                    .map(|(name, _)| *name)
+                    .collect()
+            }
             Rule::LowestUnique | Rule::HighestUnique => {
                 let mut counts: HashMap<i64, usize> = HashMap::new();
                 for value in &values {
@@ -373,7 +458,13 @@ impl Round {
             Rule::OfTheMean { num, den } => Some(mean(values) * num as f64 / den as f64),
             Rule::OfTheMedian { num, den } => Some(median(values) * num as f64 / den as f64),
             Rule::UnderTheMean => Some(mean(values)),
-            Rule::LowestUnique | Rule::HighestUnique => None,
+            // There is no number to aim at in any of these: what wins
+            // depends on the shape of the whole room, not on one number.
+            Rule::LowestUnique
+            | Rule::HighestUnique
+            | Rule::MostPopular
+            | Rule::Loneliest
+            | Rule::UnderTheLimit { .. } => None,
         }
     }
 
@@ -565,6 +656,67 @@ mod tests {
     }
 
     #[test]
+    fn the_number_the_most_people_picked_wins() {
+        let mut game = room(Rule::MostPopular, 1.0, 10.0, &[7.0, 7.0, 3.0, 9.0]);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(out.target, None);
+        assert_eq!(out.winners, vec!["Ada", "Bo"], "two of them said 7");
+    }
+
+    #[test]
+    fn nobody_wins_the_popular_one_when_no_two_people_agree() {
+        let mut game = room(Rule::MostPopular, 1.0, 10.0, &[1.0, 2.0, 3.0]);
+        game.reveal().unwrap();
+        assert!(outcome(&game).winners.is_empty());
+    }
+
+    #[test]
+    fn the_loneliest_number_is_the_one_furthest_from_the_rest() {
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[10.0, 12.0, 14.0, 90.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).winners, vec!["Di"], "76 from the nearest");
+    }
+
+    #[test]
+    fn nobody_is_lonely_when_everybody_picked_the_same_number() {
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[5.0, 5.0, 5.0]);
+        game.reveal().unwrap();
+        assert!(outcome(&game).winners.is_empty());
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[5.0]);
+        game.reveal().unwrap();
+        assert!(outcome(&game).winners.is_empty(), "nobody to be far from");
+    }
+
+    #[test]
+    fn the_highest_wins_under_the_limit_and_nobody_wins_over_it() {
+        let rule = Rule::UnderTheLimit { limit: 100.0 };
+        let mut game = room(rule, 0.0, 100.0, &[10.0, 20.0, 30.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).winners, vec!["Cy"], "60 is under 100");
+
+        let mut game = room(rule, 0.0, 100.0, &[10.0, 20.0, 80.0]);
+        game.reveal().unwrap();
+        assert!(
+            outcome(&game).winners.is_empty(),
+            "110 is over the limit, so the room gets nothing"
+        );
+    }
+
+    #[test]
+    fn a_limit_has_to_be_a_number_above_nought() {
+        let mut game = Game::new(1000);
+        assert!(
+            game.start(Rule::UnderTheLimit { limit: 0.0 }, 0.0, 10.0, 1000)
+                .is_err()
+        );
+        assert!(
+            game.start(Rule::UnderTheLimit { limit: 50.0 }, 0.0, 10.0, 1000)
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn nothing_comes_out_of_a_round_that_has_not_been_revealed() {
         let game = room(THIRD, 0.0, 10.0, &[1.0, 2.0]);
         assert!(game.round().unwrap().outcome(&game.players).is_none());
@@ -651,6 +803,12 @@ mod tests {
             (Rule::LowestUnique, "the lowest number nobody else picked"),
             (Rule::HighestUnique, "the highest number nobody else picked"),
             (Rule::UnderTheMean, "the highest number below the average"),
+            (Rule::MostPopular, "the number the most people picked"),
+            (Rule::Loneliest, "the number furthest from everybody else's"),
+            (
+                Rule::UnderTheLimit { limit: 100.0 },
+                "the highest number, if everybody's together come to no more than 100",
+            ),
         ] {
             assert_eq!(rule.label(), label);
         }

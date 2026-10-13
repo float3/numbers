@@ -5,6 +5,9 @@ edition = "2024"
 license = "AGPL-3.0-only"
 description = "Number games for a room of people: everyone picks a number, and the rule decides who wins."
 
+[build-dependencies]
+rooms-client = { git = "https://github.com/float3/rooms" }
+
 [dependencies]
 axum = "0.8"
 rooms = { git = "https://github.com/float3/rooms" }
