@@ -29,7 +29,7 @@ and nothing else: working out what to pick is the game.
 ## nobody sees a number until the reveal
 
 including the host, because the host's screen is often the one on the wall.
-Until the host reveals the round, every screen gets the rule, the range,
+until the host reveals the round, every screen gets the rule, the range,
 and a count of who has picked. then every number appears at once, with the
 winner, the average, the middle number and the number the room was aiming
 at.
