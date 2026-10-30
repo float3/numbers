@@ -426,10 +426,9 @@ function host(key: string): void {
     drawHistory(view);
   }
 
-  api<{ view: HostView }>("GET", at(""))
-    .then((body) => draw(body.view))
-    .catch((e: unknown) => fail(e instanceof Error ? e.message : String(e)));
-  watch<HostView>(at("/events"), draw);
+  // Fetches the room once, then keeps it up to date from its event
+  // stream; `watch` adds the "/events" itself.
+  watch<HostView>(at(""), draw);
 }
 
 // ------------------------------------------------------------------- join
@@ -528,9 +527,11 @@ function player(key: string): void {
 
     text(
       "mine",
-      view.mine === null
-        ? `${view.picked} of ${plural(view.players, "person", "people")} have picked.`
-        : `Sent: ${num(view.mine)}. You can change it until the host stops taking numbers.`,
+      `${
+        view.mine === null
+          ? ""
+          : `Sent: ${num(view.mine)}. You can change it until the host stops taking numbers. `
+      }${view.picked} of ${plural(view.players, "person", "people")} have picked.`,
     );
 
     html(
@@ -553,10 +554,9 @@ function player(key: string): void {
     );
   }
 
-  api<{ view: PlayerView }>("GET", at(""))
-    .then((body) => draw(body.view))
-    .catch((e: unknown) => fail(e instanceof Error ? e.message : String(e)));
-  watch<PlayerView>(at("/events"), draw);
+  // Fetches the room once, then keeps it up to date from its event
+  // stream; `watch` adds the "/events" itself.
+  watch<PlayerView>(at(""), draw);
 }
 
 const where = route();
