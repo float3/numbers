@@ -10,18 +10,17 @@ import {
   fail,
   hide,
   html,
-  joinLink,
+  joining,
   list,
   num,
   onClick,
   onSubmit,
+  opening,
   plural,
-  qrInto,
-  remember,
-  remembered,
   route,
   setValue,
   show,
+  showJoin,
   text,
   value,
   watch,
@@ -255,28 +254,12 @@ function outcomeHtml(round: Playing, outcome: Outcome): string {
         .join("")}</tbody></table></div>`;
 }
 
-// ---------------------------------------------------------------- opening
-
-function start(): void {
-  show("start");
-  onClick("open", async () => {
-    byId<HTMLButtonElement>("open").disabled = true;
-    try {
-      const keys = await api<{ host: string }>("POST", "/api/rooms");
-      location.href = `/h/${keys.host}`;
-    } catch (e) {
-      byId<HTMLButtonElement>("open").disabled = false;
-      throw e;
-    }
-  });
-}
 
 // ------------------------------------------------------------------- host
 
 function host(key: string): void {
   show("host");
   const at = (path: string) => `/api/h/${encodeURIComponent(key)}${path}`;
-  let link = "";
   let now: HostView | null = null;
 
   text("where", "You are the host");
@@ -332,14 +315,7 @@ function host(key: string): void {
   });
 
   function drawRoom(view: HostView): void {
-    const next = joinLink(view.join);
-    if (next !== link) {
-      link = next;
-      const anchor = byId<HTMLAnchorElement>("join-link");
-      anchor.textContent = next;
-      anchor.href = next;
-      qrInto("join-qr", next);
-    }
+    showJoin(view.join);
     byId("room").classList.toggle("tight", view.players.length > 0);
     html(
       "who",
@@ -431,37 +407,6 @@ function host(key: string): void {
   watch<HostView>(at(""), draw);
 }
 
-// ------------------------------------------------------------------- join
-
-function join(key: string): void {
-  show("join");
-  const kept = remembered("numbers", key);
-  if (kept) {
-    location.replace(`/p/${kept}`);
-    return;
-  }
-
-  api<{ players: number }>("GET", `/api/j/${encodeURIComponent(key)}`)
-    .then((body) => {
-      text(
-        "join-count",
-        body.players === 0
-          ? "You are the first one in."
-          : `${plural(body.players, "person", "people")} already in.`,
-      );
-    })
-    .catch((e: unknown) => fail(e instanceof Error ? e.message : String(e)));
-
-  onSubmit("name-form", async () => {
-    const body = await api<{ player: string }>(
-      "POST",
-      `/api/j/${encodeURIComponent(key)}`,
-      { name: byId<HTMLInputElement>("name").value },
-    );
-    remember("numbers", key, body.player);
-    location.href = `/p/${body.player}`;
-  });
-}
 
 // ----------------------------------------------------------------- player
 
@@ -561,6 +506,6 @@ function player(key: string): void {
 
 const where = route();
 if (where.kind === "host") host(where.key);
-else if (where.kind === "join") join(where.key);
+else if (where.kind === "join") joining("numbers", where.key);
 else if (where.kind === "player") player(where.key);
-else start();
+else opening();
