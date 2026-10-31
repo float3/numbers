@@ -92,6 +92,12 @@ impl Rule {
     }
 }
 
+/// A number as it reads in a sentence: 110, 2.5, never 110.00000001.
+fn tidy_number(value: f64) -> String {
+    let rounded = (value * 1000.0).round() / 1000.0;
+    format!("{rounded}")
+}
+
 fn mean(picks: &[f64]) -> f64 {
     picks.iter().sum::<f64>() / picks.len() as f64
 }
@@ -297,13 +303,21 @@ pub struct Chosen {
 #[derive(Serialize)]
 pub struct Outcome {
     pub n: usize,
-    pub mean: f64,
-    pub median: f64,
-    /// The number to aim at, for the rules that have one.
+    /// `None` when nobody picked.
+    pub mean: Option<f64>,
+    pub median: Option<f64>,
+    /// The number the rule measures against: the one to aim at, or for
+    /// "under the average", the one to stay under.
     pub target: Option<f64>,
+    /// What `target` is, in words.
+    pub target_label: Option<&'static str>,
+    /// Everybody's numbers added up, for the limit rule.
+    pub total: Option<f64>,
     /// The rule, repeated next to the numbers.
     pub label: String,
     pub winners: Vec<String>,
+    /// Why nobody won, when nobody did.
+    pub why: Option<String>,
     /// Every pick, lowest first.
     pub picks: Vec<Chosen>,
 }
@@ -380,29 +394,29 @@ impl Round {
                 if values.len() < 2 {
                     return Vec::new(); // there is nobody else to be far from
                 }
-                let loneliness = |mine: f64| {
-                    values
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, other)| **other != mine)
-                        .map(|(_, other)| (other - mine).abs())
-                        .fold(f64::INFINITY, f64::min)
-                };
-                // Anybody who picked the same number as somebody else is
-                // nought away from them, so a room that all picked the
-                // same number has no winner.
-                let furthest = named
-                    .iter()
-                    .map(|(_, bound)| loneliness(*bound))
-                    .filter(|d| d.is_finite())
-                    .fold(0.0_f64, f64::max);
-                if furthest <= 0.0 {
+                // The distance from each pick to the nearest pick by
+                // anybody else. Somebody who picked the same number as
+                // another person is nought away from them, so a shared
+                // number never wins.
+                let loneliness: Vec<f64> = (0..values.len())
+                    .map(|mine| {
+                        values
+                            .iter()
+                            .enumerate()
+                            .filter(|(other, _)| *other != mine)
+                            .map(|(_, other)| (other - values[mine]).abs())
+                            .fold(f64::INFINITY, f64::min)
+                    })
+                    .collect();
+                let furthest = loneliness.iter().copied().fold(0.0_f64, f64::max);
+                if furthest <= SAME {
                     return Vec::new();
                 }
                 named
                     .iter()
-                    .filter(|(_, value)| (loneliness(*value) - furthest).abs() <= SAME)
-                    .map(|(name, _)| *name)
+                    .zip(&loneliness)
+                    .filter(|(_, distance)| (*distance - furthest).abs() <= SAME)
+                    .map(|((name, _), _)| *name)
                     .collect()
             }
             Rule::UnderTheLimit { limit } => {
@@ -461,17 +475,40 @@ impl Round {
         }
     }
 
+    /// Why a round with picks in it had no winner, in words.
+    fn why_nobody(&self, values: &[f64]) -> String {
+        let all_same = values.iter().all(|value| (value - values[0]).abs() <= SAME);
+        match self.rule {
+            Rule::UnderTheLimit { limit } => format!(
+                "Together everybody's numbers came to {}, over the limit of {}.",
+                tidy_number(values.iter().sum()),
+                tidy_number(limit)
+            ),
+            Rule::MostPopular => "No two people picked the same number.".into(),
+            Rule::Loneliest if values.len() < 2 => {
+                "Only one person picked, so there was nobody to be far from.".into()
+            }
+            _ if all_same => "Everybody picked the same number.".into(),
+            Rule::UnderTheMean => "Nobody's number was below the average.".into(),
+            _ => "Every number was picked by more than one person.".into(),
+        }
+    }
+
     /// The round's numbers, or `None` while it is still being played.
     pub fn outcome(&self, players: &[Player]) -> Option<Outcome> {
         if !self.revealed {
             return None;
         }
         let named = self.named(players);
-        if named.is_empty() {
-            return None;
-        }
         let values: Vec<f64> = named.iter().map(|(_, value)| *value).collect();
         let winners = self.winners(&named);
+        let why = if values.is_empty() {
+            Some("Nobody picked a number this round.".to_string())
+        } else if winners.is_empty() {
+            Some(self.why_nobody(&values))
+        } else {
+            None
+        };
         let mut picks: Vec<Chosen> = named
             .iter()
             .map(|(name, value)| Chosen {
@@ -481,13 +518,20 @@ impl Round {
             })
             .collect();
         picks.sort_by(|a, b| a.value.total_cmp(&b.value));
+        let target = self.target(&values);
         Some(Outcome {
             n: named.len(),
-            mean: mean(&values),
-            median: median(&values),
-            target: self.target(&values),
+            mean: (!values.is_empty()).then(|| mean(&values)),
+            median: (!values.is_empty()).then(|| median(&values)),
+            target,
+            target_label: target.map(|_| match self.rule {
+                Rule::UnderTheMean => "The average, to stay under",
+                _ => "The number to aim at",
+            }),
+            total: matches!(self.rule, Rule::UnderTheLimit { .. }).then(|| values.iter().sum()),
             label: self.rule.label(),
             winners: winners.iter().map(|name| (*name).to_string()).collect(),
+            why,
             picks,
         })
     }
@@ -571,7 +615,7 @@ mod tests {
         let mut game = room(THIRD, 0.0, 10.0, &[9.0, 6.0, 3.0, 0.0]);
         game.reveal().unwrap();
         let out = outcome(&game);
-        assert_eq!(out.mean, 4.5);
+        assert_eq!(out.mean, Some(4.5));
         assert_eq!(out.target, Some(1.5));
         assert_eq!(out.winners, vec!["Cy", "Di"], "3 and 0 are both 1.5 off");
         assert_eq!(out.picks.len(), 4);
@@ -584,7 +628,7 @@ mod tests {
         let mut game = room(THIRD, 0.0, 10.0, &[9.0, 0.0]);
         game.reveal().unwrap();
         let out = outcome(&game);
-        assert_eq!(out.mean, 4.5);
+        assert_eq!(out.mean, Some(4.5));
         assert_eq!(out.target, Some(1.5));
         assert_eq!(out.winners, vec!["Bo"], "0 is 1.5 off and 9 is 7.5 off");
     }
@@ -604,7 +648,7 @@ mod tests {
         let mut game = room(rule, 0.0, 100.0, &[0.0, 3.0, 99.0]);
         game.reveal().unwrap();
         let out = outcome(&game);
-        assert_eq!(out.median, 3.0, "the 99 does not drag the middle");
+        assert_eq!(out.median, Some(3.0), "the 99 does not drag the middle");
         assert_eq!(out.target, Some(2.0));
         assert_eq!(out.winners, vec!["Bo"]);
     }
@@ -805,5 +849,108 @@ mod tests {
         ] {
             assert_eq!(rule.label(), label);
         }
+    }
+
+    #[test]
+    fn a_shared_number_is_never_the_loneliest() {
+        // The two 5s are nought from each other; 90 is 85 from them.
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[5.0, 5.0, 90.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).winners, vec!["Cy"]);
+
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[5.0, 5.0, 90.0, 90.0]);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert!(out.winners.is_empty(), "every number is shared");
+        assert_eq!(
+            out.why.as_deref(),
+            Some("Every number was picked by more than one person.")
+        );
+    }
+
+    #[test]
+    fn a_round_nobody_won_says_why() {
+        for (rule, picks, why) in [
+            (
+                Rule::MostPopular,
+                &[1.0, 2.0, 3.0][..],
+                "No two people picked the same number.",
+            ),
+            (
+                Rule::LowestUnique,
+                &[4.0, 4.0, 7.0, 7.0][..],
+                "Every number was picked by more than one person.",
+            ),
+            (
+                Rule::UnderTheMean,
+                &[5.0, 5.0][..],
+                "Everybody picked the same number.",
+            ),
+            (
+                Rule::UnderTheLimit { limit: 100.0 },
+                &[10.0, 20.0, 80.0][..],
+                "Together everybody's numbers came to 110, over the limit of 100.",
+            ),
+            (
+                Rule::Loneliest,
+                &[5.0][..],
+                "Only one person picked, so there was nobody to be far from.",
+            ),
+        ] {
+            let mut game = room(rule, 0.0, 100.0, picks);
+            game.reveal().unwrap();
+            let out = outcome(&game);
+            assert!(out.winners.is_empty(), "{why}");
+            assert_eq!(out.why.as_deref(), Some(why));
+        }
+    }
+
+    #[test]
+    fn a_round_with_a_winner_has_no_excuse() {
+        let mut game = room(THIRD, 0.0, 10.0, &[9.0, 0.0]);
+        game.reveal().unwrap();
+        assert!(outcome(&game).why.is_none());
+    }
+
+    #[test]
+    fn a_round_revealed_with_no_picks_still_comes_out() {
+        let mut game = Game::new(1000);
+        game.join("Ada", 1000).unwrap();
+        game.start(THIRD, 0.0, 10.0, 1000).unwrap();
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(out.n, 0);
+        assert_eq!(out.mean, None);
+        assert!(out.winners.is_empty());
+        assert_eq!(
+            out.why.as_deref(),
+            Some("Nobody picked a number this round.")
+        );
+    }
+
+    #[test]
+    fn under_the_average_marks_the_average_as_the_line_to_stay_under() {
+        let mut game = room(Rule::UnderTheMean, 0.0, 100.0, &[10.0, 20.0, 90.0]);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(out.target_label, Some("The average, to stay under"));
+        let mut game = room(THIRD, 0.0, 10.0, &[3.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).target_label, Some("The number to aim at"));
+    }
+
+    #[test]
+    fn the_limit_rule_shows_the_total() {
+        let mut game = room(
+            Rule::UnderTheLimit { limit: 100.0 },
+            0.0,
+            100.0,
+            &[10.0, 20.0],
+        );
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).total, Some(30.0));
+        let mut game = room(THIRD, 0.0, 10.0, &[3.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).total, None);
     }
 }
