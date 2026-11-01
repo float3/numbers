@@ -8,6 +8,7 @@
 //! authority there is: `/h/<key>` runs the room, `/j/<key>` joins it, and
 //! `/p/<key>` belongs to one player.
 
+pub mod answer;
 pub mod game;
 mod view;
 
@@ -22,6 +23,7 @@ use axum::{
 use rooms::{Rooms, http, now_ms, site};
 use serde::Deserialize;
 
+use answer::Answers;
 use game::{Game, Rule};
 
 /// The page and its files. The script and stylesheet are compiled from
@@ -55,6 +57,10 @@ async fn act(
 struct Started {
     #[serde(flatten)]
     rule: Rule,
+    /// Whole numbers, decimals or expressions; by default, what the rule
+    /// takes.
+    #[serde(default)]
+    answers: Option<Answers>,
     low: f64,
     high: f64,
 }
@@ -71,7 +77,12 @@ struct Named {
 
 #[derive(Deserialize)]
 struct Picked {
-    value: f64,
+    /// What the player typed, read as the round's kind of answer.
+    #[serde(default)]
+    text: Option<String>,
+    /// A number already read, as older pages send.
+    #[serde(default)]
+    value: Option<f64>,
 }
 
 async fn open_room(State(rooms): State<Shared>) -> Response {
@@ -101,7 +112,13 @@ async fn start(
     Json(started): Json<Started>,
 ) -> Response {
     act(&rooms, &key, |game, now| {
-        game.start(started.rule, started.low, started.high, now)
+        game.start_with(
+            started.rule,
+            started.answers,
+            started.low,
+            started.high,
+            now,
+        )
     })
     .await
 }
@@ -179,8 +196,12 @@ async fn pick(
     };
     let done = rooms
         .with(&room, |game, now| {
-            game.pick(&key, picked.value, now)
-                .map(|()| http::envelope(now, &view::player(game, &key)))
+            match (&picked.text, picked.value) {
+                (Some(text), _) => game.pick_text(&key, text, now).map(|_| ()),
+                (None, Some(value)) => game.pick(&key, value, now),
+                (None, None) => Err("Type a number first."),
+            }
+            .map(|()| http::envelope(now, &view::player(game, &key)))
         })
         .await;
     match done {
@@ -314,6 +335,56 @@ mod tests {
         )
         .await;
         (host, players.remove(0), players.remove(0))
+    }
+
+    #[tokio::test]
+    async fn an_expression_is_read_on_the_server_and_shown_as_typed() {
+        let (app, path) = app("expression");
+        let keys = ok(&app, "POST", "/api/rooms", None).await;
+        let host = keys["host"].as_str().unwrap().to_string();
+        let join = keys["join"].as_str().unwrap().to_string();
+        let ada = ok(
+            &app,
+            "POST",
+            &format!("/api/j/{join}"),
+            Some(json!({ "name": "Ada" })),
+        )
+        .await["player"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let started = ok(
+            &app,
+            "POST",
+            &format!("/api/h/{host}/start"),
+            Some(json!({"rule": "of-the-mean", "num": 2, "den": 3, "answers": "expression", "low": 0, "high": 1000})),
+        )
+        .await;
+        assert_eq!(started["view"]["round"]["answers"], "expression");
+
+        let (status, _) = call(
+            &app,
+            "PUT",
+            &format!("/api/p/{ada}/pick"),
+            Some(json!({"text": "1/0"})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let view = ok(
+            &app,
+            "PUT",
+            &format!("/api/p/{ada}/pick"),
+            Some(json!({"text": "2^10 - 24"})),
+        )
+        .await["view"]
+            .clone();
+        assert_eq!(view["mine"], 1000.0);
+        assert_eq!(view["mine_text"], "2^10 - 24");
+
+        ok(&app, "POST", &format!("/api/h/{host}/reveal"), None).await;
+        let view = ok(&app, "GET", &format!("/api/h/{host}"), None).await;
+        assert_eq!(view["view"]["outcome"]["picks"][0]["text"], "2^10 - 24");
+        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]

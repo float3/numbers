@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::answer::{Answers, MAX_TEXT};
+
 pub const MAX_PLAYERS: usize = 200;
 pub const MAX_ROUNDS: usize = 200;
 pub const MAX_NAME: usize = 32;
@@ -118,10 +120,13 @@ fn median(picks: &[f64]) -> f64 {
 /// of them.
 const SAME: f64 = 1e-9;
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Pick {
     pub value: f64,
     pub at: u64,
+    /// What was typed, in a round played with expressions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -135,6 +140,10 @@ pub struct Round {
     pub rule: Rule,
     pub low: f64,
     pub high: f64,
+    /// What a pick can be typed as. Rounds from before this was chosen
+    /// have none, and take what their rule did then.
+    #[serde(default)]
+    pub answers: Option<Answers>,
     pub open: bool,
     /// Until this is true, nobody is sent anybody's pick, including the
     /// host, whose screen is often the one on the wall.
@@ -215,9 +224,24 @@ impl Game {
         Ok(key)
     }
 
-    /// Starts a round. The round before it stops taking picks.
+    /// Starts a round, with the answers its rule takes by default.
     pub fn start(&mut self, rule: Rule, low: f64, high: f64, now: u64) -> Result<(), &'static str> {
+        self.start_with(rule, None, low, high, now)
+    }
+
+    /// Starts a round. The round before it stops taking picks.
+    pub fn start_with(
+        &mut self,
+        rule: Rule,
+        answers: Option<Answers>,
+        low: f64,
+        high: f64,
+        now: u64,
+    ) -> Result<(), &'static str> {
         rule.valid()?;
+        if rule.whole_only() && answers == Some(Answers::Decimal) {
+            return Err("This rule is played with whole numbers, so it cannot take decimals.");
+        }
         if !low.is_finite() || !high.is_finite() {
             return Err("The range needs two numbers.");
         }
@@ -240,6 +264,7 @@ impl Game {
             rule,
             low,
             high,
+            answers,
             open: true,
             revealed: false,
             asked: now,
@@ -267,6 +292,25 @@ impl Game {
     }
 
     pub fn pick(&mut self, player: &str, value: f64, now: u64) -> Result<(), &'static str> {
+        self.put(player, value, None, now)
+    }
+
+    /// Picks what a player typed, read as the round's kind of answer.
+    pub fn pick_text(&mut self, player: &str, text: &str, now: u64) -> Result<f64, &'static str> {
+        let answers = self.round().ok_or("No round has been started.")?.answers();
+        let value = answers.read(text)?;
+        let kept = (answers == Answers::Expression).then(|| tidy(text, MAX_TEXT));
+        self.put(player, value, kept, now)?;
+        Ok(value)
+    }
+
+    fn put(
+        &mut self,
+        player: &str,
+        value: f64,
+        text: Option<String>,
+        now: u64,
+    ) -> Result<(), &'static str> {
         if !value.is_finite() {
             return Err("That is not a number.");
         }
@@ -280,12 +324,17 @@ impl Game {
         if value < round.low || value > round.high {
             return Err("That number is outside the range for this round.");
         }
-        if round.rule.whole_only() && value.fract() != 0.0 {
+        if round.whole() && value.fract() != 0.0 {
             return Err("This round is played with whole numbers.");
         }
-        round
-            .picks
-            .insert(player.to_string(), Pick { value, at: now });
+        round.picks.insert(
+            player.to_string(),
+            Pick {
+                value,
+                at: now,
+                text,
+            },
+        );
         Ok(())
     }
 }
@@ -296,6 +345,8 @@ impl Game {
 pub struct Chosen {
     pub name: String,
     pub value: f64,
+    /// What they typed, when the round took expressions.
+    pub text: Option<String>,
     pub won: bool,
 }
 
@@ -323,6 +374,20 @@ pub struct Outcome {
 }
 
 impl Round {
+    /// What a pick can be typed as.
+    pub fn answers(&self) -> Answers {
+        self.answers.unwrap_or(if self.rule.whole_only() {
+            Answers::Whole
+        } else {
+            Answers::Decimal
+        })
+    }
+
+    /// Whether every pick has to come to a whole number.
+    pub fn whole(&self) -> bool {
+        self.rule.whole_only() || self.answers() == Answers::Whole
+    }
+
     fn named<'a>(&'a self, players: &'a [Player]) -> Vec<(&'a str, f64)> {
         players
             .iter()
@@ -509,11 +574,19 @@ impl Round {
         } else {
             None
         };
+        let text = |name: &str| {
+            players
+                .iter()
+                .find(|p| p.name == name)
+                .and_then(|p| self.picks.get(&p.key))
+                .and_then(|pick| pick.text.clone())
+        };
         let mut picks: Vec<Chosen> = named
             .iter()
             .map(|(name, value)| Chosen {
                 name: (*name).to_string(),
                 value: *value,
+                text: text(name),
                 won: winners.contains(name),
             })
             .collect();
@@ -952,5 +1025,66 @@ mod tests {
         let mut game = room(THIRD, 0.0, 10.0, &[3.0]);
         game.reveal().unwrap();
         assert_eq!(outcome(&game).total, None);
+    }
+
+    #[test]
+    fn the_host_chooses_what_a_pick_can_be_typed_as() {
+        let mut game = Game::new(1000);
+        let ada = game.join("Ada", 1000).unwrap();
+        game.start_with(THIRD, Some(Answers::Expression), 0.0, 1000.0, 1000)
+            .unwrap();
+        let value = game.pick_text(&ada, "1,001/3", 1001).unwrap();
+        assert!((value - 1001.0 / 3.0).abs() < 1e-9);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(
+            out.picks[0].text.as_deref(),
+            Some("1,001/3"),
+            "shown as typed"
+        );
+
+        game.start_with(THIRD, Some(Answers::Whole), 0.0, 10.0, 2000)
+            .unwrap();
+        assert!(game.pick_text(&ada, "2.5", 2001).is_err());
+        assert!(game.pick_text(&ada, "1+1", 2001).is_err());
+        assert_eq!(game.pick_text(&ada, "3", 2001), Ok(3.0));
+        assert_eq!(game.round().unwrap().picks[&ada].text, None);
+
+        game.start_with(THIRD, Some(Answers::Decimal), 0.0, 10.0, 3000)
+            .unwrap();
+        assert_eq!(game.pick_text(&ada, "2,5", 3001), Ok(2.5));
+        assert!(game.pick_text(&ada, "20", 3001).is_err(), "out of range");
+    }
+
+    #[test]
+    fn a_rule_that_counts_matches_cannot_take_decimals() {
+        let mut game = Game::new(1000);
+        let ada = game.join("Ada", 1000).unwrap();
+        assert!(
+            game.start_with(Rule::LowestUnique, Some(Answers::Decimal), 1.0, 10.0, 1000)
+                .is_err()
+        );
+        game.start_with(
+            Rule::LowestUnique,
+            Some(Answers::Expression),
+            1.0,
+            10.0,
+            1000,
+        )
+        .unwrap();
+        assert!(
+            game.pick_text(&ada, "10/4", 1001).is_err(),
+            "has to come to a whole number"
+        );
+        assert_eq!(game.pick_text(&ada, "10/5", 1001), Ok(2.0));
+    }
+
+    #[test]
+    fn rounds_saved_before_answers_were_chosen_take_what_their_rule_did() {
+        let mut game = room(THIRD, 0.0, 10.0, &[1.5]);
+        game.rounds[0].answers = None;
+        assert_eq!(game.round().unwrap().answers(), Answers::Decimal);
+        game.start(Rule::MostPopular, 0.0, 10.0, 2000).unwrap();
+        assert_eq!(game.round().unwrap().answers(), Answers::Whole);
     }
 }

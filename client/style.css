@@ -166,3 +166,96 @@ h3 {
 tr.good td {
   font-weight: 700;
 }
+
+/* Whether your number is in. Four states, each with its own look, so a
+ * glance across the room is enough: not sent, sent, changed but not
+ * sent, and locked once the host stops taking numbers. */
+.status {
+  display: grid;
+  gap: 2px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.status b {
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.status span {
+  font-size: 0.88rem;
+  color: var(--body);
+}
+
+.status.waiting {
+  border-style: dashed;
+  border-left-style: solid;
+  border-left-color: var(--focus);
+}
+
+.status.sent {
+  border-color: var(--mark);
+  background: var(--tint);
+}
+
+.status.changed {
+  border-left-color: var(--focus);
+  background: var(--tint-warm);
+}
+
+.status.locked {
+  border-color: var(--ink);
+  background: var(--tint);
+}
+
+.status.missed {
+  border-left-color: var(--bad);
+}
+
+.status.just {
+  animation: landed 0.6s ease-out;
+}
+
+@keyframes landed {
+  0% {
+    transform: scale(0.97);
+    box-shadow: 0 0 0 0 var(--mark);
+  }
+  40% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status.just {
+    animation: none;
+  }
+}
+
+.reading {
+  min-height: 1.3em;
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: var(--body);
+  font-variant-numeric: tabular-nums;
+}
+
+.reading.bad {
+  color: var(--bad);
+}
+
+#send:disabled {
+  opacity: 1;
+  background: var(--tint);
+  color: var(--ink);
+  border-color: var(--mark);
+  cursor: default;
+}

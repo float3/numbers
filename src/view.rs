@@ -6,6 +6,7 @@
 
 use serde::Serialize;
 
+use crate::answer::Answers;
 use crate::game::{Game, Outcome, Round, Score};
 
 #[derive(Serialize)]
@@ -22,6 +23,8 @@ pub struct Playing {
     high: f64,
     /// Whether the round is played with whole numbers.
     whole: bool,
+    /// What a pick can be typed as.
+    answers: Answers,
     open: bool,
     revealed: bool,
     asked: u64,
@@ -55,6 +58,8 @@ pub struct Player<'a> {
     /// This player's number, which they can change until the round
     /// closes.
     mine: Option<f64>,
+    /// What this player typed, when the round takes expressions.
+    mine_text: Option<String>,
     picked: usize,
     players: usize,
     outcome: Option<Outcome>,
@@ -68,7 +73,8 @@ impl Round {
             label: self.rule.label(),
             low: self.low,
             high: self.high,
-            whole: self.rule.whole_only(),
+            whole: self.whole(),
+            answers: self.answers(),
             open: self.open,
             revealed: self.revealed,
             asked: self.asked,
@@ -121,6 +127,9 @@ pub fn player<'a>(game: &'a Game, key: &str) -> Option<Player<'a>> {
         name: &player.name,
         round: round.map(Round::playing),
         mine: round.and_then(|r| r.picks.get(key)).map(|pick| pick.value),
+        mine_text: round
+            .and_then(|r| r.picks.get(key))
+            .and_then(|pick| pick.text.clone()),
         picked: round.map_or(0, |r| r.picks.len()),
         players: game.players.len(),
         won: outcome
