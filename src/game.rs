@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::answer::{Answers, MAX_TEXT};
+
 pub const MAX_PLAYERS: usize = 200;
 pub const MAX_ROUNDS: usize = 200;
 pub const MAX_NAME: usize = 32;
@@ -92,6 +94,12 @@ impl Rule {
     }
 }
 
+/// A number as it reads in a sentence: 110, 2.5, never 110.00000001.
+fn tidy_number(value: f64) -> String {
+    let rounded = (value * 1000.0).round() / 1000.0;
+    format!("{rounded}")
+}
+
 fn mean(picks: &[f64]) -> f64 {
     picks.iter().sum::<f64>() / picks.len() as f64
 }
@@ -112,10 +120,13 @@ fn median(picks: &[f64]) -> f64 {
 /// of them.
 const SAME: f64 = 1e-9;
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Pick {
     pub value: f64,
     pub at: u64,
+    /// What was typed, in a round played with expressions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -129,6 +140,10 @@ pub struct Round {
     pub rule: Rule,
     pub low: f64,
     pub high: f64,
+    /// What a pick can be typed as. Rounds from before this was chosen
+    /// have none, and take what their rule did then.
+    #[serde(default)]
+    pub answers: Option<Answers>,
     pub open: bool,
     /// Until this is true, nobody is sent anybody's pick, including the
     /// host, whose screen is often the one on the wall.
@@ -209,9 +224,24 @@ impl Game {
         Ok(key)
     }
 
-    /// Starts a round. The round before it stops taking picks.
+    /// Starts a round, with the answers its rule takes by default.
     pub fn start(&mut self, rule: Rule, low: f64, high: f64, now: u64) -> Result<(), &'static str> {
+        self.start_with(rule, None, low, high, now)
+    }
+
+    /// Starts a round. The round before it stops taking picks.
+    pub fn start_with(
+        &mut self,
+        rule: Rule,
+        answers: Option<Answers>,
+        low: f64,
+        high: f64,
+        now: u64,
+    ) -> Result<(), &'static str> {
         rule.valid()?;
+        if rule.whole_only() && answers == Some(Answers::Decimal) {
+            return Err("This rule is played with whole numbers, so it cannot take decimals.");
+        }
         if !low.is_finite() || !high.is_finite() {
             return Err("The range needs two numbers.");
         }
@@ -234,6 +264,7 @@ impl Game {
             rule,
             low,
             high,
+            answers,
             open: true,
             revealed: false,
             asked: now,
@@ -261,6 +292,25 @@ impl Game {
     }
 
     pub fn pick(&mut self, player: &str, value: f64, now: u64) -> Result<(), &'static str> {
+        self.put(player, value, None, now)
+    }
+
+    /// Picks what a player typed, read as the round's kind of answer.
+    pub fn pick_text(&mut self, player: &str, text: &str, now: u64) -> Result<f64, &'static str> {
+        let answers = self.round().ok_or("No round has been started.")?.answers();
+        let value = answers.read(text)?;
+        let kept = (answers == Answers::Expression).then(|| tidy(text, MAX_TEXT));
+        self.put(player, value, kept, now)?;
+        Ok(value)
+    }
+
+    fn put(
+        &mut self,
+        player: &str,
+        value: f64,
+        text: Option<String>,
+        now: u64,
+    ) -> Result<(), &'static str> {
         if !value.is_finite() {
             return Err("That is not a number.");
         }
@@ -274,12 +324,17 @@ impl Game {
         if value < round.low || value > round.high {
             return Err("That number is outside the range for this round.");
         }
-        if round.rule.whole_only() && value.fract() != 0.0 {
+        if round.whole() && value.fract() != 0.0 {
             return Err("This round is played with whole numbers.");
         }
-        round
-            .picks
-            .insert(player.to_string(), Pick { value, at: now });
+        round.picks.insert(
+            player.to_string(),
+            Pick {
+                value,
+                at: now,
+                text,
+            },
+        );
         Ok(())
     }
 }
@@ -290,6 +345,8 @@ impl Game {
 pub struct Chosen {
     pub name: String,
     pub value: f64,
+    /// What they typed, when the round took expressions.
+    pub text: Option<String>,
     pub won: bool,
 }
 
@@ -297,18 +354,40 @@ pub struct Chosen {
 #[derive(Serialize)]
 pub struct Outcome {
     pub n: usize,
-    pub mean: f64,
-    pub median: f64,
-    /// The number to aim at, for the rules that have one.
+    /// `None` when nobody picked.
+    pub mean: Option<f64>,
+    pub median: Option<f64>,
+    /// The number the rule measures against: the one to aim at, or for
+    /// "under the average", the one to stay under.
     pub target: Option<f64>,
+    /// What `target` is, in words.
+    pub target_label: Option<&'static str>,
+    /// Everybody's numbers added up, for the limit rule.
+    pub total: Option<f64>,
     /// The rule, repeated next to the numbers.
     pub label: String,
     pub winners: Vec<String>,
+    /// Why nobody won, when nobody did.
+    pub why: Option<String>,
     /// Every pick, lowest first.
     pub picks: Vec<Chosen>,
 }
 
 impl Round {
+    /// What a pick can be typed as.
+    pub fn answers(&self) -> Answers {
+        self.answers.unwrap_or(if self.rule.whole_only() {
+            Answers::Whole
+        } else {
+            Answers::Decimal
+        })
+    }
+
+    /// Whether every pick has to come to a whole number.
+    pub fn whole(&self) -> bool {
+        self.rule.whole_only() || self.answers() == Answers::Whole
+    }
+
     fn named<'a>(&'a self, players: &'a [Player]) -> Vec<(&'a str, f64)> {
         players
             .iter()
@@ -380,29 +459,29 @@ impl Round {
                 if values.len() < 2 {
                     return Vec::new(); // there is nobody else to be far from
                 }
-                let loneliness = |mine: f64| {
-                    values
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, other)| **other != mine)
-                        .map(|(_, other)| (other - mine).abs())
-                        .fold(f64::INFINITY, f64::min)
-                };
-                // Anybody who picked the same number as somebody else is
-                // nought away from them, so a room that all picked the
-                // same number has no winner.
-                let furthest = named
-                    .iter()
-                    .map(|(_, bound)| loneliness(*bound))
-                    .filter(|d| d.is_finite())
-                    .fold(0.0_f64, f64::max);
-                if furthest <= 0.0 {
+                // The distance from each pick to the nearest pick by
+                // anybody else. Somebody who picked the same number as
+                // another person is nought away from them, so a shared
+                // number never wins.
+                let loneliness: Vec<f64> = (0..values.len())
+                    .map(|mine| {
+                        values
+                            .iter()
+                            .enumerate()
+                            .filter(|(other, _)| *other != mine)
+                            .map(|(_, other)| (other - values[mine]).abs())
+                            .fold(f64::INFINITY, f64::min)
+                    })
+                    .collect();
+                let furthest = loneliness.iter().copied().fold(0.0_f64, f64::max);
+                if furthest <= SAME {
                     return Vec::new();
                 }
                 named
                     .iter()
-                    .filter(|(_, value)| (loneliness(*value) - furthest).abs() <= SAME)
-                    .map(|(name, _)| *name)
+                    .zip(&loneliness)
+                    .filter(|(_, distance)| (*distance - furthest).abs() <= SAME)
+                    .map(|((name, _), _)| *name)
                     .collect()
             }
             Rule::UnderTheLimit { limit } => {
@@ -461,33 +540,71 @@ impl Round {
         }
     }
 
+    /// Why a round with picks in it had no winner, in words.
+    fn why_nobody(&self, values: &[f64]) -> String {
+        let all_same = values.iter().all(|value| (value - values[0]).abs() <= SAME);
+        match self.rule {
+            Rule::UnderTheLimit { limit } => format!(
+                "Together everybody's numbers came to {}, over the limit of {}.",
+                tidy_number(values.iter().sum()),
+                tidy_number(limit)
+            ),
+            Rule::MostPopular => "No two people picked the same number.".into(),
+            Rule::Loneliest if values.len() < 2 => {
+                "Only one person picked, so there was nobody to be far from.".into()
+            }
+            _ if all_same => "Everybody picked the same number.".into(),
+            Rule::UnderTheMean => "Nobody's number was below the average.".into(),
+            _ => "Every number was picked by more than one person.".into(),
+        }
+    }
+
     /// The round's numbers, or `None` while it is still being played.
     pub fn outcome(&self, players: &[Player]) -> Option<Outcome> {
         if !self.revealed {
             return None;
         }
         let named = self.named(players);
-        if named.is_empty() {
-            return None;
-        }
         let values: Vec<f64> = named.iter().map(|(_, value)| *value).collect();
         let winners = self.winners(&named);
+        let why = if values.is_empty() {
+            Some("Nobody picked a number this round.".to_string())
+        } else if winners.is_empty() {
+            Some(self.why_nobody(&values))
+        } else {
+            None
+        };
+        let text = |name: &str| {
+            players
+                .iter()
+                .find(|p| p.name == name)
+                .and_then(|p| self.picks.get(&p.key))
+                .and_then(|pick| pick.text.clone())
+        };
         let mut picks: Vec<Chosen> = named
             .iter()
             .map(|(name, value)| Chosen {
                 name: (*name).to_string(),
                 value: *value,
+                text: text(name),
                 won: winners.contains(name),
             })
             .collect();
         picks.sort_by(|a, b| a.value.total_cmp(&b.value));
+        let target = self.target(&values);
         Some(Outcome {
             n: named.len(),
-            mean: mean(&values),
-            median: median(&values),
-            target: self.target(&values),
+            mean: (!values.is_empty()).then(|| mean(&values)),
+            median: (!values.is_empty()).then(|| median(&values)),
+            target,
+            target_label: target.map(|_| match self.rule {
+                Rule::UnderTheMean => "The average, to stay under",
+                _ => "The number to aim at",
+            }),
+            total: matches!(self.rule, Rule::UnderTheLimit { .. }).then(|| values.iter().sum()),
             label: self.rule.label(),
             winners: winners.iter().map(|name| (*name).to_string()).collect(),
+            why,
             picks,
         })
     }
@@ -571,7 +688,7 @@ mod tests {
         let mut game = room(THIRD, 0.0, 10.0, &[9.0, 6.0, 3.0, 0.0]);
         game.reveal().unwrap();
         let out = outcome(&game);
-        assert_eq!(out.mean, 4.5);
+        assert_eq!(out.mean, Some(4.5));
         assert_eq!(out.target, Some(1.5));
         assert_eq!(out.winners, vec!["Cy", "Di"], "3 and 0 are both 1.5 off");
         assert_eq!(out.picks.len(), 4);
@@ -584,7 +701,7 @@ mod tests {
         let mut game = room(THIRD, 0.0, 10.0, &[9.0, 0.0]);
         game.reveal().unwrap();
         let out = outcome(&game);
-        assert_eq!(out.mean, 4.5);
+        assert_eq!(out.mean, Some(4.5));
         assert_eq!(out.target, Some(1.5));
         assert_eq!(out.winners, vec!["Bo"], "0 is 1.5 off and 9 is 7.5 off");
     }
@@ -604,7 +721,7 @@ mod tests {
         let mut game = room(rule, 0.0, 100.0, &[0.0, 3.0, 99.0]);
         game.reveal().unwrap();
         let out = outcome(&game);
-        assert_eq!(out.median, 3.0, "the 99 does not drag the middle");
+        assert_eq!(out.median, Some(3.0), "the 99 does not drag the middle");
         assert_eq!(out.target, Some(2.0));
         assert_eq!(out.winners, vec!["Bo"]);
     }
@@ -805,5 +922,169 @@ mod tests {
         ] {
             assert_eq!(rule.label(), label);
         }
+    }
+
+    #[test]
+    fn a_shared_number_is_never_the_loneliest() {
+        // The two 5s are nought from each other; 90 is 85 from them.
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[5.0, 5.0, 90.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).winners, vec!["Cy"]);
+
+        let mut game = room(Rule::Loneliest, 0.0, 100.0, &[5.0, 5.0, 90.0, 90.0]);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert!(out.winners.is_empty(), "every number is shared");
+        assert_eq!(
+            out.why.as_deref(),
+            Some("Every number was picked by more than one person.")
+        );
+    }
+
+    #[test]
+    fn a_round_nobody_won_says_why() {
+        for (rule, picks, why) in [
+            (
+                Rule::MostPopular,
+                &[1.0, 2.0, 3.0][..],
+                "No two people picked the same number.",
+            ),
+            (
+                Rule::LowestUnique,
+                &[4.0, 4.0, 7.0, 7.0][..],
+                "Every number was picked by more than one person.",
+            ),
+            (
+                Rule::UnderTheMean,
+                &[5.0, 5.0][..],
+                "Everybody picked the same number.",
+            ),
+            (
+                Rule::UnderTheLimit { limit: 100.0 },
+                &[10.0, 20.0, 80.0][..],
+                "Together everybody's numbers came to 110, over the limit of 100.",
+            ),
+            (
+                Rule::Loneliest,
+                &[5.0][..],
+                "Only one person picked, so there was nobody to be far from.",
+            ),
+        ] {
+            let mut game = room(rule, 0.0, 100.0, picks);
+            game.reveal().unwrap();
+            let out = outcome(&game);
+            assert!(out.winners.is_empty(), "{why}");
+            assert_eq!(out.why.as_deref(), Some(why));
+        }
+    }
+
+    #[test]
+    fn a_round_with_a_winner_has_no_excuse() {
+        let mut game = room(THIRD, 0.0, 10.0, &[9.0, 0.0]);
+        game.reveal().unwrap();
+        assert!(outcome(&game).why.is_none());
+    }
+
+    #[test]
+    fn a_round_revealed_with_no_picks_still_comes_out() {
+        let mut game = Game::new(1000);
+        game.join("Ada", 1000).unwrap();
+        game.start(THIRD, 0.0, 10.0, 1000).unwrap();
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(out.n, 0);
+        assert_eq!(out.mean, None);
+        assert!(out.winners.is_empty());
+        assert_eq!(
+            out.why.as_deref(),
+            Some("Nobody picked a number this round.")
+        );
+    }
+
+    #[test]
+    fn under_the_average_marks_the_average_as_the_line_to_stay_under() {
+        let mut game = room(Rule::UnderTheMean, 0.0, 100.0, &[10.0, 20.0, 90.0]);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(out.target_label, Some("The average, to stay under"));
+        let mut game = room(THIRD, 0.0, 10.0, &[3.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).target_label, Some("The number to aim at"));
+    }
+
+    #[test]
+    fn the_limit_rule_shows_the_total() {
+        let mut game = room(
+            Rule::UnderTheLimit { limit: 100.0 },
+            0.0,
+            100.0,
+            &[10.0, 20.0],
+        );
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).total, Some(30.0));
+        let mut game = room(THIRD, 0.0, 10.0, &[3.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).total, None);
+    }
+
+    #[test]
+    fn the_host_chooses_what_a_pick_can_be_typed_as() {
+        let mut game = Game::new(1000);
+        let ada = game.join("Ada", 1000).unwrap();
+        game.start_with(THIRD, Some(Answers::Expression), 0.0, 1000.0, 1000)
+            .unwrap();
+        let value = game.pick_text(&ada, "1,001/3", 1001).unwrap();
+        assert!((value - 1001.0 / 3.0).abs() < 1e-9);
+        game.reveal().unwrap();
+        let out = outcome(&game);
+        assert_eq!(
+            out.picks[0].text.as_deref(),
+            Some("1,001/3"),
+            "shown as typed"
+        );
+
+        game.start_with(THIRD, Some(Answers::Whole), 0.0, 10.0, 2000)
+            .unwrap();
+        assert!(game.pick_text(&ada, "2.5", 2001).is_err());
+        assert!(game.pick_text(&ada, "1+1", 2001).is_err());
+        assert_eq!(game.pick_text(&ada, "3", 2001), Ok(3.0));
+        assert_eq!(game.round().unwrap().picks[&ada].text, None);
+
+        game.start_with(THIRD, Some(Answers::Decimal), 0.0, 10.0, 3000)
+            .unwrap();
+        assert_eq!(game.pick_text(&ada, "2,5", 3001), Ok(2.5));
+        assert!(game.pick_text(&ada, "20", 3001).is_err(), "out of range");
+    }
+
+    #[test]
+    fn a_rule_that_counts_matches_cannot_take_decimals() {
+        let mut game = Game::new(1000);
+        let ada = game.join("Ada", 1000).unwrap();
+        assert!(
+            game.start_with(Rule::LowestUnique, Some(Answers::Decimal), 1.0, 10.0, 1000)
+                .is_err()
+        );
+        game.start_with(
+            Rule::LowestUnique,
+            Some(Answers::Expression),
+            1.0,
+            10.0,
+            1000,
+        )
+        .unwrap();
+        assert!(
+            game.pick_text(&ada, "10/4", 1001).is_err(),
+            "has to come to a whole number"
+        );
+        assert_eq!(game.pick_text(&ada, "10/5", 1001), Ok(2.0));
+    }
+
+    #[test]
+    fn rounds_saved_before_answers_were_chosen_take_what_their_rule_did() {
+        let mut game = room(THIRD, 0.0, 10.0, &[1.5]);
+        game.rounds[0].answers = None;
+        assert_eq!(game.round().unwrap().answers(), Answers::Decimal);
+        game.start(Rule::MostPopular, 0.0, 10.0, 2000).unwrap();
+        assert_eq!(game.round().unwrap().answers(), Answers::Whole);
     }
 }

@@ -26,6 +26,20 @@ built on [rooms](https://github.com/float3/rooms).
 the first one is the Keynesian beauty contest. the pages state the rules
 and nothing else: working out what to pick is the game.
 
+## what a number can be
+
+the host chooses per round: whole numbers, decimals, or expressions such as
+`1,001/3`, `2^10 - 1` or `sqrt(2)`. the three rules that count matching
+picks take whole numbers, or expressions that come out whole. a comma
+between groups of three digits is a thousands separator (`1,001` is a
+thousand and one); any other comma is a decimal point (`1,5` is one and a
+half). the phone shows what an answer reads as before it is sent, and the
+reveal shows each sum as it was typed.
+
+the phone also says plainly whether your number is in: not sent yet, sent
+and still changeable, changed but not sent, or locked once the host stops
+taking numbers.
+
 ## nobody sees a number until the reveal
 
 including the host, because the host's screen is often the one on the wall.

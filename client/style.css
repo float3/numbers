@@ -94,3 +94,87 @@ h3 {
     overflow-wrap: anywhere;
   }
 }
+
+/* Who won, or why nobody did, as the first thing the reveal says. */
+.verdict {
+  margin-top: 4px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--tint);
+  border-left: 5px solid var(--mark);
+}
+
+.verdict.won {
+  background: color-mix(in srgb, var(--gold) 22%, var(--card));
+  border-left-color: var(--gold);
+}
+
+.verdict .eyebrow {
+  margin: 0 0 2px;
+}
+
+.verdict .big {
+  margin: 0;
+}
+
+.verdict.none .big {
+  font-size: 1.15rem;
+  line-height: 1.35;
+}
+
+.you-result {
+  margin: 0 0 12px;
+  font-weight: 700;
+}
+
+/* A number several people picked shows how many, and the winning
+ * number is labelled with who picked it. */
+.strip .pick {
+  display: grid;
+  place-items: center;
+}
+
+.strip .pick i {
+  position: absolute;
+  bottom: 13px;
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--body);
+}
+
+.strip .pick.winner {
+  z-index: 1;
+}
+
+.strip .pick.winner span {
+  position: absolute;
+  top: 18px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.strip .pick.winner i {
+  bottom: 17px;
+}
+
+.strip + .ends {
+  margin-top: 26px;
+}
+
+tr.good td {
+  font-weight: 700;
+}
+
+.reading {
+  min-height: 1.3em;
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: var(--body);
+  font-variant-numeric: tabular-nums;
+}
+
+.reading.bad {
+  color: var(--bad);
+}

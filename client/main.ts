@@ -11,6 +11,7 @@ import {
   hide,
   html,
   joining,
+  landed,
   list,
   num,
   onClick,
@@ -18,6 +19,7 @@ import {
   opening,
   plural,
   route,
+  sentState,
   setValue,
   show,
   showJoin,
@@ -25,12 +27,14 @@ import {
   value,
   watch,
 } from "./rooms";
+import { type Answers, read } from "./answer";
 
 interface Playing {
   label: string;
   low: number;
   high: number;
   whole: boolean;
+  answers: Answers;
   open: boolean;
   revealed: boolean;
   asked: number;
@@ -39,16 +43,20 @@ interface Playing {
 interface Chosen {
   name: string;
   value: number;
+  text: string | null;
   won: boolean;
 }
 
 interface Outcome {
   n: number;
-  mean: number;
-  median: number;
+  mean: number | null;
+  median: number | null;
   target: number | null;
+  target_label: string | null;
+  total: number | null;
   label: string;
   winners: string[];
+  why: string | null;
   picks: Chosen[];
 }
 
@@ -67,7 +75,7 @@ interface Score {
 interface Past {
   label: string;
   target: number | null;
-  mean: number;
+  mean: number | null;
   winners: string[];
   n: number;
 }
@@ -85,6 +93,7 @@ interface PlayerView {
   name: string;
   round: Playing | null;
   mine: number | null;
+  mine_text: string | null;
   picked: number;
   players: number;
   outcome: Outcome | null;
@@ -99,6 +108,8 @@ interface Preset {
   rule: string;
   num?: number;
   den?: number;
+  /** Rules that count matching picks, which need whole numbers. */
+  whole?: true;
   /** Only the limit rule has one, and only it shows the field. */
   limit?: number;
   low: number;
@@ -155,6 +166,7 @@ const RULES: Preset[] = [
     id: "lowest-unique",
     name: "The lowest number nobody else picked",
     rule: "lowest-unique",
+    whole: true,
     low: 1,
     high: 20,
   },
@@ -162,6 +174,7 @@ const RULES: Preset[] = [
     id: "highest-unique",
     name: "The highest number nobody else picked",
     rule: "highest-unique",
+    whole: true,
     low: 1,
     high: 20,
   },
@@ -176,6 +189,7 @@ const RULES: Preset[] = [
     id: "most-popular",
     name: "The number the most people pick",
     rule: "most-popular",
+    whole: true,
     low: 1,
     high: 10,
   },
@@ -203,6 +217,16 @@ const chosen = (): Preset =>
 const sentence = (said: string): string =>
   said.charAt(0).toUpperCase() + said.slice(1);
 
+/** A pick as it was typed, with what it came to when that differs. */
+const typed = (text: string | null, value: number): string =>
+  text === null || text === num(value) ? num(value) : `${text} = ${num(value)}`;
+
+const ANSWERS: Record<Answers, string> = {
+  whole: "whole numbers",
+  decimal: "decimals allowed",
+  expression: "sums allowed, like 1,001/3",
+};
+
 /** Every number along the round's range, with the target marked. */
 function strip(round: Playing, outcome: Outcome): string {
   const width = round.high - round.low || 1;
@@ -212,10 +236,22 @@ function strip(round: Playing, outcome: Outcome): string {
     outcome.target === null
       ? ""
       : `<div class="target" style="left:${at(outcome.target)}%"><span>${num(outcome.target)}</span></div>`;
-  const dots = outcome.picks
+  // One dot per distinct number, sized by how many picked it, with the
+  // winning numbers drawn last so nothing covers them.
+  const spots = new Map<number, { value: number; names: string[]; won: boolean }>();
+  for (const pick of outcome.picks) {
+    const spot = spots.get(pick.value) ?? { value: pick.value, names: [], won: false };
+    spot.names.push(pick.name);
+    spot.won ||= pick.won;
+    spots.set(pick.value, spot);
+  }
+  const dots = [...spots.values()]
+    .sort((a, b) => Number(a.won) - Number(b.won))
     .map(
-      (pick) =>
-        `<div class="pick${pick.won ? " winner" : ""}" style="left:${at(pick.value)}%" title="${esc(pick.name)}: ${num(pick.value)}"></div>`,
+      (spot) =>
+        `<div class="pick${spot.won ? " winner" : ""}" style="left:${at(spot.value)}%" title="${esc(list(spot.names))}: ${num(spot.value)}">${
+          spot.names.length > 1 ? `<i>${spot.names.length}</i>` : ""
+        }${spot.won ? `<span>${esc(list(spot.names))}</span>` : ""}</div>`,
     )
     .join("");
   return `<div class="strip">${target}${dots}</div>
@@ -225,16 +261,20 @@ function strip(round: Playing, outcome: Outcome): string {
 function outcomeHtml(round: Playing, outcome: Outcome): string {
   const winners =
     outcome.winners.length > 0
-      ? `<p class="eyebrow">${outcome.winners.length === 1 ? "The winner" : "The winners"}</p>
-         <p class="big good">${esc(list(outcome.winners))}</p>`
-      : `<p class="eyebrow">Nobody won</p>
-         <p class="note">Nobody's number met the rule this round.</p>`;
+      ? `<div class="verdict won"><p class="eyebrow">${outcome.winners.length === 1 ? "The winner" : "Shared between"}</p>
+         <p class="big">${esc(list(outcome.winners))}</p></div>`
+      : `<div class="verdict none"><p class="eyebrow">Nobody won</p>
+         <p class="big">${esc(outcome.why ?? "Nobody's number met the rule this round.")}</p></div>`;
+  if (outcome.n === 0) return winners;
   const rows: [string, string][] = [
     ["The average", num(outcome.mean)],
     ["The middle number", num(outcome.median)],
   ];
-  if (outcome.target !== null) {
-    rows.unshift(["The number to aim at", num(outcome.target)]);
+  if (outcome.target !== null && outcome.target_label !== "The average, to stay under") {
+    rows.unshift([outcome.target_label ?? "The number to aim at", num(outcome.target)]);
+  }
+  if (outcome.total !== null) {
+    rows.unshift(["Everybody together", num(outcome.total)]);
   }
   return `${winners}
     ${strip(round, outcome)}
@@ -248,7 +288,7 @@ function outcomeHtml(round: Playing, outcome: Outcome): string {
       <tbody>${outcome.picks
         .map(
           (pick) => `<tr class="${pick.won ? "good" : ""}">
-        <td>${esc(pick.name)}${pick.won ? " ✓" : ""}</td><td>${num(pick.value)}</td>
+        <td>${pick.won ? "🏆 " : ""}${esc(pick.name)}</td><td>${esc(typed(pick.text, pick.value))}</td>
       </tr>`,
         )
         .join("")}</tbody></table></div>`;
@@ -277,8 +317,26 @@ function host(key: string): void {
       touched = true;
     });
   }
+  const answers = byId<HTMLSelectElement>("answers");
+  answers.value = "decimal";
+  function answersNote(): void {
+    const rule = chosen();
+    text(
+      "answers-note",
+      rule.whole
+        ? "This rule counts who picked the same number, so it needs whole numbers. Expressions are fine if they come out whole."
+        : answers.value === "expression"
+          ? "Phones show what a sum comes to before it is sent, and everybody sees the sums at the reveal."
+          : "",
+    );
+  }
+  answers.addEventListener("change", answersNote);
   function ruleChanged(): void {
     const rule = chosen();
+    const decimal = answers.querySelector<HTMLOptionElement>('option[value="decimal"]');
+    if (decimal) decimal.disabled = rule.whole === true;
+    if (rule.whole && answers.value === "decimal") answers.value = "whole";
+    answersNote();
     hide("limit-field", rule.limit === undefined);
     if (rule.limit !== undefined) setValue("limit", rule.limit);
     if (touched) return;
@@ -292,6 +350,7 @@ function host(key: string): void {
     const rule = chosen();
     const body: Record<string, unknown> = {
       rule: rule.rule,
+      answers: answers.value,
       low: value("low"),
       high: value("high"),
     };
@@ -356,9 +415,9 @@ function host(key: string): void {
         .map(
           (past) => `<div class="past">
         <span>${esc(sentence(past.label))}</span>
-        <span>${past.target === null ? "" : `aim ${num(past.target)} · `}average ${num(past.mean)} · ${
-          past.winners.length > 0 ? esc(list(past.winners)) : "nobody"
-        }</span>
+        <span>${past.n === 0 ? "nobody picked" : `${past.target === null ? "" : `target ${num(past.target)} · `}average ${num(past.mean)} · ${
+          past.winners.length > 0 ? `won by ${esc(list(past.winners))}` : "nobody won"
+        }`}</span>
       </div>`,
         )
         .join("")}`,
@@ -378,7 +437,7 @@ function host(key: string): void {
       text("h-rule", sentence(round.label));
       text(
         "h-range",
-        `${num(round.low)} to ${num(round.high)}${round.whole ? ", whole numbers" : ""}`,
+        `${num(round.low)} to ${num(round.high)}, ${ANSWERS[round.answers]}`,
       );
       const picked = view.players.filter((who) => who.picked).length;
       const missing = view.players
@@ -413,30 +472,111 @@ function host(key: string): void {
 function player(key: string): void {
   show("player");
   const at = (path: string) => `/api/p/${encodeURIComponent(key)}${path}`;
+  const field = byId<HTMLInputElement>("pick");
   let filledFor: number | null = null;
+  let last: PlayerView | null = null;
+  let sending = false;
 
-  onSubmit("pick-form", async () => {
-    const picked = value("pick");
-    if (picked === null) {
-      fail("Pick a number first.");
+  /** What the field reads as, in the current round. */
+  const reading = () => (last?.round ? read(last.round.answers, field.value) : null);
+
+  /** Whether what is in the field is what the room already has. */
+  function unchanged(view: PlayerView): boolean {
+    if (view.mine === null) return false;
+    if (view.mine_text !== null) return field.value.trim() === view.mine_text;
+    const r = reading();
+    return r !== null && "value" in r && r.value === view.mine;
+  }
+
+  /** The line under the field: what it reads as, or why it does not. */
+  function drawReading(): void {
+    const round = last?.round;
+    const line = byId("reading");
+    const r = reading();
+    if (!round || r === null || field.value.trim() === "") {
+      line.textContent = "";
+      line.className = "reading";
       return;
     }
-    const body = await api<{ view: PlayerView }>("PUT", at("/pick"), {
-      value: picked,
-    });
-    draw(body.view);
-    fail("");
+    if ("error" in r) {
+      line.textContent = r.error;
+      line.className = "reading bad";
+    } else if (r.value < round.low || r.value > round.high) {
+      line.textContent = `That comes to ${num(r.value)}, outside ${num(round.low)} to ${num(round.high)}.`;
+      line.className = "reading bad";
+    } else {
+      // Only worth saying when it is not just the number typed back.
+      const plain = field.value.trim();
+      line.textContent = plain === String(r.value) ? "" : `Reads as ${num(r.value)}`;
+      line.className = "reading";
+    }
+  }
+
+  /** Whether your number is in, and whether you can still change it. */
+  function drawStatus(): void {
+    const view = last;
+    const round = view?.round;
+    const send = byId<HTMLButtonElement>("send");
+    if (!view || !round || round.revealed) {
+      sentState("status", null);
+      return;
+    }
+    const yours = view.mine === null ? "" : typed(view.mine_text, view.mine);
+    const fresh = !unchanged(view);
+    send.classList.toggle("done", !fresh);
+    send.disabled = sending || !fresh;
+    if (!round.open) {
+      if (view.mine === null) sentState("status", "missed", "You did not send a number", "The host has stopped taking numbers.");
+      else sentState("status", "locked", `🔒 Locked in: ${yours}`, "The host has stopped taking numbers, so this is final. Wait for the reveal.");
+    } else if (view.mine === null) {
+      sentState("status", "waiting", "Not sent yet", "Your number only counts once you press Send.");
+      send.textContent = "Send";
+    } else if (!fresh) {
+      sentState("status", "sent", `✓ Sent: ${yours}`, "You can still change it until the host stops taking numbers.");
+      send.textContent = "Sent ✓";
+    } else {
+      sentState("status", "changed", "Your change is not sent yet", `The room still has ${yours} from you. Press Send to replace it.`);
+      send.textContent = "Send the change";
+    }
+    text("pick-label", view.mine === null ? "Your number" : "Change your number");
+  }
+
+  field.addEventListener("input", () => {
+    drawReading();
+    drawStatus();
+  });
+
+  onSubmit("pick-form", async () => {
+    const r = reading();
+    if (r === null || "error" in r) {
+      fail(r?.error ?? "Pick a number first.");
+      return;
+    }
+    sending = true;
+    try {
+      const body = await api<{ view: PlayerView }>("PUT", at("/pick"), {
+        text: field.value.trim(),
+      });
+      draw(body.view);
+      fail("");
+      landed("status");
+    } finally {
+      sending = false;
+      drawStatus();
+    }
   });
 
   function draw(view: PlayerView): void {
+    last = view;
     html("you", `<span class="dot"></span> You are ${esc(view.name)}`);
     const round = view.round;
     if (!round) {
       text("p-state", "Waiting");
       text("p-rule", "Waiting for the first round");
       text("p-range", "");
+      text("mine", "");
       hide("pick-form", true);
-      hide("p-closed", true);
+      hide("status", true);
       html("p-outcome", "");
       return;
     }
@@ -448,46 +588,42 @@ function player(key: string): void {
     text("p-rule", sentence(round.label));
     text(
       "p-range",
-      `Anything from ${num(round.low)} to ${num(round.high)}${round.whole ? ", whole numbers only." : "."}`,
+      `Anything from ${num(round.low)} to ${num(round.high)}. ${
+        round.answers === "whole"
+          ? "Whole numbers only."
+          : round.answers === "decimal"
+            ? "Decimals are fine."
+            : `You can type a sum, like 1,001/3 or 2^10 - 1${round.whole ? ", as long as it comes out whole" : ""}.`
+      }`,
     );
     hide("pick-form", !round.open);
-    hide("p-closed", round.open);
-    if (!round.open) {
-      text(
-        "p-closed",
-        view.mine === null
-          ? "You did not pick this round."
-          : `You picked ${num(view.mine)}.`,
-      );
-    }
 
-    const field = byId<HTMLInputElement>("pick");
-    field.min = String(round.low);
-    field.max = String(round.high);
-    field.step = round.whole ? "1" : "any";
+    // A phone keyboard to suit: digits for plain numbers, letters and
+    // signs for sums, and a minus key whenever the range goes below nought.
+    field.inputMode =
+      round.answers === "expression" || round.low < 0 ? "text" : round.answers === "whole" ? "numeric" : "decimal";
+    field.placeholder = round.answers === "expression" ? "e.g. 1,001/3" : "";
     if (filledFor !== round.asked) {
       filledFor = round.asked;
-      setValue("pick", view.mine);
+      field.value = view.mine === null ? "" : (view.mine_text ?? String(view.mine));
     }
+    drawReading();
+    drawStatus();
 
     text(
       "mine",
-      `${
-        view.mine === null
-          ? ""
-          : `Sent: ${num(view.mine)}. You can change it until the host stops taking numbers. `
-      }${view.picked} of ${plural(view.players, "person", "people")} have picked.`,
+      round.revealed ? "" : `${view.picked} of ${plural(view.players, "person", "people")} have sent a number.`,
     );
 
     html(
       "p-outcome",
       view.outcome
         ? `<div class="panel">${
-            view.won === true
-              ? `<p class="eyebrow">You won this one</p>`
-              : view.won === false
-                ? `<p class="eyebrow">You did not win this one</p>`
-                : ""
+            view.mine === null
+              ? `<p class="you-result">You did not pick this round.</p>`
+              : view.won === true
+                ? `<p class="you-result good">🎉 You won with ${esc(typed(view.mine_text, view.mine))}</p>`
+                : `<p class="you-result">You picked ${esc(typed(view.mine_text, view.mine))}, not a winner this time.</p>`
           }${outcomeHtml(round, view.outcome)}${
             view.score && view.score.played
               ? `<p class="note">Your evening: ${view.score.wins} of
