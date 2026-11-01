@@ -11,6 +11,7 @@ import {
   hide,
   html,
   joining,
+  landed,
   list,
   num,
   onClick,
@@ -18,6 +19,7 @@ import {
   opening,
   plural,
   route,
+  sentState,
   setValue,
   show,
   showJoin,
@@ -514,37 +516,27 @@ function player(key: string): void {
   function drawStatus(): void {
     const view = last;
     const round = view?.round;
-    const status = byId("status");
     const send = byId<HTMLButtonElement>("send");
     if (!view || !round || round.revealed) {
-      hide("status", true);
+      sentState("status", null);
       return;
     }
-    hide("status", false);
     const yours = view.mine === null ? "" : typed(view.mine_text, view.mine);
+    const fresh = !unchanged(view);
+    send.classList.toggle("done", !fresh);
+    send.disabled = sending || !fresh;
     if (!round.open) {
-      status.className = `status ${view.mine === null ? "missed" : "locked"}`;
-      status.innerHTML =
-        view.mine === null
-          ? `<b>You did not send a number</b><span>The host has stopped taking numbers.</span>`
-          : `<b>🔒 Locked in: ${esc(yours)}</b><span>The host has stopped taking numbers, so this is final. Wait for the reveal.</span>`;
-      return;
-    }
-    if (view.mine === null) {
-      status.className = "status waiting";
-      status.innerHTML = `<b>Not sent yet</b><span>Your number only counts once you press Send.</span>`;
+      if (view.mine === null) sentState("status", "missed", "You did not send a number", "The host has stopped taking numbers.");
+      else sentState("status", "locked", `🔒 Locked in: ${yours}`, "The host has stopped taking numbers, so this is final. Wait for the reveal.");
+    } else if (view.mine === null) {
+      sentState("status", "waiting", "Not sent yet", "Your number only counts once you press Send.");
       send.textContent = "Send";
-      send.disabled = sending;
-    } else if (unchanged(view)) {
-      status.className = "status sent";
-      status.innerHTML = `<b>✓ Sent: ${esc(yours)}</b><span>You can still change it until the host stops taking numbers.</span>`;
+    } else if (!fresh) {
+      sentState("status", "sent", `✓ Sent: ${yours}`, "You can still change it until the host stops taking numbers.");
       send.textContent = "Sent ✓";
-      send.disabled = true;
     } else {
-      status.className = "status changed";
-      status.innerHTML = `<b>Your change is not sent yet</b><span>The room still has ${esc(yours)} from you. Press Send to replace it.</span>`;
+      sentState("status", "changed", "Your change is not sent yet", `The room still has ${yours} from you. Press Send to replace it.`);
       send.textContent = "Send the change";
-      send.disabled = sending;
     }
     text("pick-label", view.mine === null ? "Your number" : "Change your number");
   }
@@ -567,12 +559,7 @@ function player(key: string): void {
       });
       draw(body.view);
       fail("");
-      // A moment of movement, so a press that sent is not mistaken for
-      // one that did nothing.
-      const status = byId("status");
-      status.classList.remove("just");
-      void status.offsetWidth;
-      status.classList.add("just");
+      landed("status");
     } finally {
       sending = false;
       drawStatus();
