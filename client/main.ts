@@ -44,11 +44,14 @@ interface Chosen {
 
 interface Outcome {
   n: number;
-  mean: number;
-  median: number;
+  mean: number | null;
+  median: number | null;
   target: number | null;
+  target_label: string | null;
+  total: number | null;
   label: string;
   winners: string[];
+  why: string | null;
   picks: Chosen[];
 }
 
@@ -67,7 +70,7 @@ interface Score {
 interface Past {
   label: string;
   target: number | null;
-  mean: number;
+  mean: number | null;
   winners: string[];
   n: number;
 }
@@ -212,10 +215,22 @@ function strip(round: Playing, outcome: Outcome): string {
     outcome.target === null
       ? ""
       : `<div class="target" style="left:${at(outcome.target)}%"><span>${num(outcome.target)}</span></div>`;
-  const dots = outcome.picks
+  // One dot per distinct number, sized by how many picked it, with the
+  // winning numbers drawn last so nothing covers them.
+  const spots = new Map<number, { value: number; names: string[]; won: boolean }>();
+  for (const pick of outcome.picks) {
+    const spot = spots.get(pick.value) ?? { value: pick.value, names: [], won: false };
+    spot.names.push(pick.name);
+    spot.won ||= pick.won;
+    spots.set(pick.value, spot);
+  }
+  const dots = [...spots.values()]
+    .sort((a, b) => Number(a.won) - Number(b.won))
     .map(
-      (pick) =>
-        `<div class="pick${pick.won ? " winner" : ""}" style="left:${at(pick.value)}%" title="${esc(pick.name)}: ${num(pick.value)}"></div>`,
+      (spot) =>
+        `<div class="pick${spot.won ? " winner" : ""}" style="left:${at(spot.value)}%" title="${esc(list(spot.names))}: ${num(spot.value)}">${
+          spot.names.length > 1 ? `<i>${spot.names.length}</i>` : ""
+        }${spot.won ? `<span>${esc(list(spot.names))}</span>` : ""}</div>`,
     )
     .join("");
   return `<div class="strip">${target}${dots}</div>
@@ -225,16 +240,20 @@ function strip(round: Playing, outcome: Outcome): string {
 function outcomeHtml(round: Playing, outcome: Outcome): string {
   const winners =
     outcome.winners.length > 0
-      ? `<p class="eyebrow">${outcome.winners.length === 1 ? "The winner" : "The winners"}</p>
-         <p class="big good">${esc(list(outcome.winners))}</p>`
-      : `<p class="eyebrow">Nobody won</p>
-         <p class="note">Nobody's number met the rule this round.</p>`;
+      ? `<div class="verdict won"><p class="eyebrow">${outcome.winners.length === 1 ? "The winner" : "Shared between"}</p>
+         <p class="big">${esc(list(outcome.winners))}</p></div>`
+      : `<div class="verdict none"><p class="eyebrow">Nobody won</p>
+         <p class="big">${esc(outcome.why ?? "Nobody's number met the rule this round.")}</p></div>`;
+  if (outcome.n === 0) return winners;
   const rows: [string, string][] = [
     ["The average", num(outcome.mean)],
     ["The middle number", num(outcome.median)],
   ];
-  if (outcome.target !== null) {
-    rows.unshift(["The number to aim at", num(outcome.target)]);
+  if (outcome.target !== null && outcome.target_label !== "The average, to stay under") {
+    rows.unshift([outcome.target_label ?? "The number to aim at", num(outcome.target)]);
+  }
+  if (outcome.total !== null) {
+    rows.unshift(["Everybody together", num(outcome.total)]);
   }
   return `${winners}
     ${strip(round, outcome)}
@@ -248,7 +267,7 @@ function outcomeHtml(round: Playing, outcome: Outcome): string {
       <tbody>${outcome.picks
         .map(
           (pick) => `<tr class="${pick.won ? "good" : ""}">
-        <td>${esc(pick.name)}${pick.won ? " ✓" : ""}</td><td>${num(pick.value)}</td>
+        <td>${pick.won ? "🏆 " : ""}${esc(pick.name)}</td><td>${num(pick.value)}</td>
       </tr>`,
         )
         .join("")}</tbody></table></div>`;
@@ -356,9 +375,9 @@ function host(key: string): void {
         .map(
           (past) => `<div class="past">
         <span>${esc(sentence(past.label))}</span>
-        <span>${past.target === null ? "" : `aim ${num(past.target)} · `}average ${num(past.mean)} · ${
-          past.winners.length > 0 ? esc(list(past.winners)) : "nobody"
-        }</span>
+        <span>${past.n === 0 ? "nobody picked" : `${past.target === null ? "" : `target ${num(past.target)} · `}average ${num(past.mean)} · ${
+          past.winners.length > 0 ? `won by ${esc(list(past.winners))}` : "nobody won"
+        }`}</span>
       </div>`,
         )
         .join("")}`,
@@ -483,11 +502,11 @@ function player(key: string): void {
       "p-outcome",
       view.outcome
         ? `<div class="panel">${
-            view.won === true
-              ? `<p class="eyebrow">You won this one</p>`
-              : view.won === false
-                ? `<p class="eyebrow">You did not win this one</p>`
-                : ""
+            view.mine === null
+              ? `<p class="you-result">You did not pick this round.</p>`
+              : view.won === true
+                ? `<p class="you-result good">🎉 You won with ${num(view.mine)}</p>`
+                : `<p class="you-result">You picked ${num(view.mine)}, not a winner this time.</p>`
           }${outcomeHtml(round, view.outcome)}${
             view.score && view.score.played
               ? `<p class="note">Your evening: ${view.score.wins} of

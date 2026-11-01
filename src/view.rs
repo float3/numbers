@@ -31,7 +31,7 @@ pub struct Playing {
 pub struct Past {
     label: String,
     target: Option<f64>,
-    mean: f64,
+    mean: Option<f64>,
     winners: Vec<String>,
     n: usize,
 }
@@ -190,7 +190,7 @@ mod tests {
         game.reveal().unwrap();
         let view = player(&game, &bo).unwrap();
         let outcome = view.outcome.expect("the round came out");
-        assert_eq!(outcome.mean, 5.0);
+        assert_eq!(outcome.mean, Some(5.0));
         assert_eq!(outcome.target, Some(5.0 / 3.0));
         assert_eq!(outcome.winners, vec!["Bo"]);
         assert_eq!(view.won, Some(true));
