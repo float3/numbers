@@ -16,6 +16,8 @@ use crate::game::{Game, Outcome, Round, Score};
 
 #[derive(Serialize)]
 pub struct Who<'a> {
+    /// The player's [`Present::id`], to match them to `people`.
+    id: u32,
     name: &'a str,
     picked: bool,
 }
@@ -58,6 +60,9 @@ pub struct Host<'a> {
     people: Vec<Present<'a>>,
     /// Everybody, with whether they have picked in this round.
     players: Vec<Who<'a>>,
+    /// Who is away: not connected, and no pick in this round or the one
+    /// before. See `rooms::lobby::away`.
+    away: Vec<u32>,
     round: Option<Playing>,
     /// Only after the round has been revealed.
     outcome: Option<Outcome>,
@@ -152,10 +157,12 @@ pub fn host(game: &Game, now: u64) -> Host<'_> {
             .players()
             .iter()
             .map(|player| Who {
+                id: player.id,
                 name: &player.name,
                 picked: round.is_some_and(|r| r.picks.contains_key(&player.key)),
             })
             .collect(),
+        away: rooms::lobby::away_ids(game, now),
         round: round.map(Round::playing),
         outcome: round.and_then(|round| round.outcome(game.players())),
         history: history(game),
@@ -436,5 +443,32 @@ mod tests {
         let (first, second) = (&game.rounds[0], &game.rounds[1]);
         assert!(second.same_as(first) && second.answers == first.answers);
         assert!(second.open && second.picks.is_empty());
+    }
+
+    #[test]
+    fn away_is_not_connected_and_no_pick_in_this_round_or_the_last() {
+        use rooms::lobby::{PRESENT_MS, away_ids, remove_away};
+        let (mut game, ada, bo) = room();
+        let cy = admit(&mut game, "Cy", None, 1000).unwrap();
+        let id = |game: &Game, key: &str| game.lobby.player(key).unwrap().id;
+        let later = 1000 + PRESENT_MS;
+        assert_eq!(away_ids(&game, later), [id(&game, &cy)], "Cy never picked");
+        game.start(THIRD, 0.0, 10.0, later).unwrap();
+        game.pick(&ada, 5.0, later).unwrap();
+        assert_eq!(
+            away_ids(&game, later),
+            [id(&game, &cy)],
+            "Bo picked in the round before"
+        );
+        game.start(THIRD, 0.0, 10.0, later).unwrap();
+        let away = away_ids(&game, later);
+        assert_eq!(away, [id(&game, &bo), id(&game, &cy)]);
+        assert!(json(&host(&game, later)).contains(&format!("\"away\":{}", json(&away))));
+        // Connected is never away.
+        game.lobby.touch(&bo, later);
+        assert_eq!(away_ids(&game, later), [id(&game, &cy)]);
+
+        assert_eq!(remove_away(&mut game, &away, later).unwrap().len(), 1);
+        assert_eq!(game.lobby.len(), 2, "only Cy, who was still away");
     }
 }
