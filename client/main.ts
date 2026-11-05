@@ -82,7 +82,9 @@ interface Score {
   name: string;
   played: number;
   wins: number;
-  average: number | null;
+  /** How far off the number to aim at, as a share of the range, on
+   *  average over the rounds that had one. */
+  off: number | null;
 }
 
 interface Past {
@@ -263,6 +265,12 @@ const chosen = (): Preset =>
 
 const sentence = (said: string): string =>
   said.charAt(0).toUpperCase() + said.slice(1);
+
+/** A share of a range as a percentage: "4%", or "0.5%" below ten. */
+const share = (part: number): string => {
+  const percent = part * 100;
+  return `${percent < 10 ? Number(percent.toFixed(1)) : Math.round(percent)}%`;
+};
 
 /** A pick as it was typed, with what it came to when that differs. */
 const typed = (text: string | null, value: number): string =>
@@ -464,18 +472,24 @@ function host(key: string): void {
       html("board", "");
       return;
     }
+    // Only once a round with a number to aim at has come out.
+    const aimed = view.scores.some((score) => score.off !== null);
     html(
       "board",
       `<h3>The evening so far</h3><div class="scroll"><table><thead><tr>
-        <th>Who</th><th>Rounds</th><th>Won</th><th>Picks on average</th>
+        <th>Who</th><th>Rounds</th><th>Won</th>${aimed ? "<th>Off the target</th>" : ""}
       </tr></thead><tbody>${view.scores
         .map(
           (score) => `<tr>
         <td>${esc(score.name)}</td><td>${score.played}</td><td>${score.wins}</td>
-        <td>${num(score.average)}</td>
+        ${aimed ? `<td>${score.off === null ? "–" : share(score.off)}</td>` : ""}
       </tr>`,
         )
-        .join("")}</tbody></table></div>`,
+        .join("")}</tbody></table></div>${
+        aimed
+          ? `<p class="note">Off the target: how far each pick was from the number to aim at, as a share of the round's range, on average over the rounds that had one.</p>`
+          : ""
+      }`,
     );
   }
 
@@ -704,8 +718,11 @@ function player(key: string): void {
           }${outcomeHtml(round, view.outcome)}${
             view.score && view.score.played
               ? `<p class="note">Your evening: ${view.score.wins} of
-                 ${plural(view.score.played, "round", "rounds")} won, picking
-                 ${num(view.score.average)} on average.</p>`
+                 ${plural(view.score.played, "round", "rounds")} won${
+                   view.score.off === null
+                     ? "."
+                     : `, ${share(view.score.off)} of the range off the target on average.`
+                 }</p>`
               : ""
           }</div>`
         : "",
