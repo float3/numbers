@@ -49,13 +49,29 @@
     <div class="panel" id="room">
       <h2>The room</h2>
       <p class="note">Everybody opens this:</p>
-      <a class="link" id="join-link" href="#"></a>
-      <div class="qr" id="join-qr"></div>
-      <p class="note" id="who"></p>
+      <div id="share"></div>
+      <details id="in-room" open>
+        <summary class="eyebrow" id="who">Nobody has joined yet</summary>
+        <ul id="people"></ul>
+      </details>
+      <div id="wall-button"></div>
     </div>
 
-    <form class="panel" id="start-form">
-      <h2>Start a round</h2>
+    <section class="panel" id="playing" hidden>
+      <p class="eyebrow" id="h-state"></p>
+      <h2 id="h-rule"></h2>
+      <p class="note" id="h-range"></p>
+      <p class="note" id="progress"></p>
+      <div class="actions">
+        <button class="button" id="close"></button>
+        <button class="button primary" id="reveal">Reveal</button>
+      </div>
+      <div id="outcome"></div>
+    </section>
+
+    <details class="panel" id="next" open>
+      <summary><h2 id="next-title">Start a round</h2></summary>
+    <form id="start-form">
       <label for="rule">The rule</label>
       <select id="rule"></select>
       <div class="two">
@@ -73,20 +89,9 @@
         <label for="limit">The limit for the room's total</label>
         <input id="limit" type="number" step="any" inputmode="decimal" value="100">
       </div>
-      <div class="actions"><button class="button primary" type="submit">Start the round</button></div>
+      <div class="actions"><button class="button primary" type="submit" id="start">Start the round</button></div>
     </form>
-
-    <section class="panel" id="playing" hidden>
-      <p class="eyebrow" id="h-state"></p>
-      <h2 id="h-rule"></h2>
-      <p class="note" id="h-range"></p>
-      <p class="note" id="progress"></p>
-      <div class="actions">
-        <button class="button" id="close"></button>
-        <button class="button primary" id="reveal">Reveal</button>
-      </div>
-      <div id="outcome"></div>
-    </section>
+    </details>
 
     <section id="board"></section>
     <section id="history"></section>

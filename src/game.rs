@@ -6,13 +6,15 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rooms::lobby::{HasLobby, Lobby, OnWall, tidy};
 use serde::{Deserialize, Serialize};
 
 use crate::answer::{Answers, MAX_TEXT};
 
-pub const MAX_PLAYERS: usize = 200;
+/// Somebody in the room. The lobby keeps who is in.
+pub use rooms::lobby::Player;
+
 pub const MAX_ROUNDS: usize = 200;
-pub const MAX_NAME: usize = 32;
 /// The widest range a round can be played over, which is far wider than
 /// the nought to a hundred these are usually played on.
 pub const LIMIT: f64 = 1_000_000.0;
@@ -127,11 +129,10 @@ pub struct Pick {
     /// What was typed, in a round played with expressions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Player {
-    pub key: String,
+    /// Who picked it, as they were called then. A round that has come
+    /// out keeps the number of somebody the host later took out, under
+    /// this name, so taking somebody out does not change who won.
+    #[serde(default)]
     pub name: String,
 }
 
@@ -155,8 +156,11 @@ pub struct Round {
 
 #[derive(Serialize, Deserialize)]
 pub struct Game {
-    pub join: String,
-    pub players: Vec<Player>,
+    /// Who is in, and the join and wall keys. Rooms saved with `join`
+    /// and `players` at the top are moved in here as they load: see
+    /// `Room::migrate`.
+    #[serde(default)]
+    pub lobby: Lobby,
     pub rounds: Vec<Round>,
     pub last_seen: u64,
 }
@@ -169,22 +173,53 @@ impl rooms::Room for Game {
     fn expired(&self, now: u64) -> bool {
         self.last_seen + rooms::DAY_MS < now
     }
+
+    fn keys(&self) -> Vec<&str> {
+        self.lobby.keys().collect()
+    }
+
+    fn migrate(saved: &mut serde_json::Value) {
+        rooms::lobby::migrate(saved);
+    }
 }
 
-fn tidy(text: &str, max: usize) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(max)
-        .collect()
+impl HasLobby for Game {
+    fn lobby(&self) -> &Lobby {
+        &self.lobby
+    }
+
+    fn lobby_mut(&mut self) -> &mut Lobby {
+        &mut self.lobby
+    }
+
+    /// Somebody taken out stops counting in the round still being
+    /// played. Rounds that have come out keep their number, so the
+    /// winners and the scores already shown stay as they were.
+    fn left(&mut self, player: &Player) {
+        if let Some(round) = self.rounds.last_mut().filter(|round| !round.revealed) {
+            round.picks.remove(&player.key);
+        }
+    }
+
+    fn wall_game(&self, _now: u64) -> serde_json::Value {
+        serde_json::to_value(crate::view::wall(self)).unwrap_or_default()
+    }
+
+    /// Once rounds are being played, the round has the wall: the code
+    /// shrinks to a corner for anybody late, and the names give way to a
+    /// count.
+    fn on_wall(&self, _now: u64) -> OnWall {
+        OnWall {
+            busy: !self.rounds.is_empty(),
+            ..OnWall::default()
+        }
+    }
 }
 
 impl Game {
     pub fn new(now: u64) -> Game {
         Game {
-            join: rooms::key::new(),
-            players: Vec::new(),
+            lobby: Lobby::new(),
             rounds: Vec::new(),
             last_seen: now,
         }
@@ -199,29 +234,12 @@ impl Game {
     }
 
     pub fn player(&self, key: &str) -> Option<&Player> {
-        self.players.iter().find(|p| p.key == key)
+        self.lobby.player(key)
     }
 
-    /// As in the estimation game, a name already in the room returns
-    /// that player's key, so a phone that lost its link can rejoin.
-    pub fn join(&mut self, name: &str, now: u64) -> Result<String, &'static str> {
-        let name = tidy(name, MAX_NAME);
-        if name.is_empty() {
-            return Err("Please give a name, so the room knows who won.");
-        }
-        if let Some(player) = self.players.iter().find(|p| p.name == name) {
-            return Ok(player.key.clone());
-        }
-        if self.players.len() >= MAX_PLAYERS {
-            return Err("This room is full.");
-        }
-        let key = rooms::key::new();
-        self.players.push(Player {
-            key: key.clone(),
-            name,
-        });
-        self.last_seen = now;
-        Ok(key)
+    /// The players, in the order they joined.
+    pub fn players(&self) -> &[Player] {
+        &self.lobby.players
     }
 
     /// Starts a round, with the answers its rule takes by default.
@@ -314,9 +332,11 @@ impl Game {
         if !value.is_finite() {
             return Err("That is not a number.");
         }
-        if self.player(player).is_none() {
-            return Err("This link does not belong to anyone in the room.");
-        }
+        let name = self
+            .player(player)
+            .ok_or("This link does not belong to anyone in the room.")?
+            .name
+            .clone();
         let round = self.round_mut()?;
         if !round.open {
             return Err("This round is closed.");
@@ -333,6 +353,7 @@ impl Game {
                 value,
                 at: now,
                 text,
+                name,
             },
         );
         Ok(())
@@ -388,15 +409,23 @@ impl Round {
         self.rule.whole_only() || self.answers() == Answers::Whole
     }
 
-    fn named<'a>(&'a self, players: &'a [Player]) -> Vec<(&'a str, f64)> {
-        players
+    /// Every pick with who made it: the players in the order they
+    /// joined, then anybody taken out since, under the name they picked
+    /// with.
+    fn named<'a>(&'a self, players: &'a [Player]) -> Vec<(&'a str, &'a Pick)> {
+        let mut named: Vec<(&str, &Pick)> = players
             .iter()
-            .filter_map(|p| {
-                self.picks
-                    .get(&p.key)
-                    .map(|pick| (p.name.as_str(), pick.value))
-            })
-            .collect()
+            .filter_map(|p| self.picks.get(&p.key).map(|pick| (p.name.as_str(), pick)))
+            .collect();
+        let mut gone: Vec<&Pick> = self
+            .picks
+            .iter()
+            .filter(|(key, _)| !players.iter().any(|p| &p.key == *key))
+            .map(|(_, pick)| pick)
+            .collect();
+        gone.sort_by_key(|pick| pick.at);
+        named.extend(gone.into_iter().map(|pick| (pick.name.as_str(), pick)));
+        named
     }
 
     /// Who won, by the round's rule. Empty when nobody did, which
@@ -564,7 +593,11 @@ impl Round {
         if !self.revealed {
             return None;
         }
-        let named = self.named(players);
+        let picked = self.named(players);
+        let named: Vec<(&str, f64)> = picked
+            .iter()
+            .map(|(name, pick)| (*name, pick.value))
+            .collect();
         let values: Vec<f64> = named.iter().map(|(_, value)| *value).collect();
         let winners = self.winners(&named);
         let why = if values.is_empty() {
@@ -575,15 +608,13 @@ impl Round {
             None
         };
         let won: HashSet<&str> = winners.iter().copied().collect();
-        let mut picks: Vec<Chosen> = players
+        let mut picks: Vec<Chosen> = picked
             .iter()
-            .filter_map(|p| {
-                self.picks.get(&p.key).map(|pick| Chosen {
-                    name: p.name.clone(),
-                    value: pick.value,
-                    text: pick.text.clone(),
-                    won: won.contains(p.name.as_str()),
-                })
+            .map(|(name, pick)| Chosen {
+                name: (*name).to_string(),
+                value: pick.value,
+                text: pick.text.clone(),
+                won: won.contains(name),
             })
             .collect();
         picks.sort_by(|a, b| a.value.total_cmp(&b.value));
@@ -629,12 +660,12 @@ impl Game {
             .rounds
             .iter()
             .filter_map(|round| {
-                let outcome = round.outcome(&self.players)?;
+                let outcome = round.outcome(self.players())?;
                 Some((round, outcome.winners.into_iter().collect()))
             })
             .collect();
         let mut scores: Vec<Score> = self
-            .players
+            .players()
             .iter()
             .map(|player| {
                 let picks: Vec<f64> = revealed
@@ -662,6 +693,7 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rooms::lobby::admit;
 
     const THIRD: Rule = Rule::OfTheMean { num: 1, den: 3 };
 
@@ -669,7 +701,7 @@ mod tests {
         let mut game = Game::new(1000);
         for (i, value) in picks.iter().enumerate() {
             let name = ["Ada", "Bo", "Cy", "Di", "Eve", "Fay"][i];
-            let key = game.join(name, 1000).unwrap();
+            let key = admit(&mut game, name, None, 1000).unwrap();
             if game.rounds.is_empty() {
                 game.start(rule, low, high, 1000).unwrap();
             }
@@ -681,7 +713,7 @@ mod tests {
     fn outcome(game: &Game) -> Outcome {
         game.round()
             .unwrap()
-            .outcome(&game.players)
+            .outcome(game.players())
             .expect("numbers")
     }
 
@@ -831,13 +863,13 @@ mod tests {
     #[test]
     fn nothing_comes_out_of_a_round_that_has_not_been_revealed() {
         let game = room(THIRD, 0.0, 10.0, &[1.0, 2.0]);
-        assert!(game.round().unwrap().outcome(&game.players).is_none());
+        assert!(game.round().unwrap().outcome(game.players()).is_none());
     }
 
     #[test]
     fn a_pick_outside_the_range_is_refused() {
         let mut game = room(THIRD, 0.0, 10.0, &[5.0]);
-        let key = game.players[0].key.clone();
+        let key = game.players()[0].key.clone();
         assert!(game.pick(&key, 11.0, 1002).is_err());
         assert!(game.pick(&key, -1.0, 1002).is_err());
         assert!(game.pick(&key, 10.0, 1002).is_ok(), "the ends are in");
@@ -846,7 +878,7 @@ mod tests {
     #[test]
     fn the_unique_rules_are_played_with_whole_numbers() {
         let mut game = room(Rule::LowestUnique, 1.0, 10.0, &[3.0]);
-        let key = game.players[0].key.clone();
+        let key = game.players()[0].key.clone();
         assert!(game.pick(&key, 2.5, 1002).is_err());
         let mut game = Game::new(1000);
         assert!(game.start(Rule::LowestUnique, 0.5, 10.0, 1000).is_err());
@@ -856,7 +888,7 @@ mod tests {
     fn a_round_that_has_been_revealed_takes_no_more_picks() {
         let mut game = room(THIRD, 0.0, 10.0, &[5.0]);
         game.reveal().unwrap();
-        let key = game.players[0].key.clone();
+        let key = game.players()[0].key.clone();
         assert!(game.pick(&key, 1.0, 1002).is_err());
         assert!(game.set_open(true).is_err(), "and cannot be reopened");
     }
@@ -889,7 +921,7 @@ mod tests {
     #[test]
     fn the_scoreboard_counts_the_revealed_rounds_only() {
         let mut game = room(THIRD, 0.0, 10.0, &[9.0, 0.0]);
-        let keys: Vec<String> = game.players.iter().map(|p| p.key.clone()).collect();
+        let keys: Vec<String> = game.players().iter().map(|p| p.key.clone()).collect();
         game.reveal().unwrap();
         game.start(THIRD, 0.0, 10.0, 2000).unwrap();
         game.pick(&keys[0], 1.0, 2001).unwrap();
@@ -990,7 +1022,7 @@ mod tests {
     #[test]
     fn a_round_revealed_with_no_picks_still_comes_out() {
         let mut game = Game::new(1000);
-        game.join("Ada", 1000).unwrap();
+        admit(&mut game, "Ada", None, 1000).unwrap();
         game.start(THIRD, 0.0, 10.0, 1000).unwrap();
         game.reveal().unwrap();
         let out = outcome(&game);
@@ -1032,7 +1064,7 @@ mod tests {
     #[test]
     fn the_host_chooses_what_a_pick_can_be_typed_as() {
         let mut game = Game::new(1000);
-        let ada = game.join("Ada", 1000).unwrap();
+        let ada = admit(&mut game, "Ada", None, 1000).unwrap();
         game.start_with(THIRD, Some(Answers::Expression), 0.0, 1000.0, 1000)
             .unwrap();
         let value = game.pick_text(&ada, "1,001/3", 1001).unwrap();
@@ -1061,7 +1093,7 @@ mod tests {
     #[test]
     fn a_rule_that_counts_matches_cannot_take_decimals() {
         let mut game = Game::new(1000);
-        let ada = game.join("Ada", 1000).unwrap();
+        let ada = admit(&mut game, "Ada", None, 1000).unwrap();
         assert!(
             game.start_with(Rule::LowestUnique, Some(Answers::Decimal), 1.0, 10.0, 1000)
                 .is_err()
@@ -1088,5 +1120,39 @@ mod tests {
         assert_eq!(game.round().unwrap().answers(), Answers::Decimal);
         game.start(Rule::MostPopular, 0.0, 10.0, 2000).unwrap();
         assert_eq!(game.round().unwrap().answers(), Answers::Whole);
+    }
+
+    /// A room as saved before the lobby, and as the first lobby saved it,
+    /// flattened, with a wall key at the top.
+    fn saved(wall: &str) -> serde_json::Value {
+        serde_json::from_str(&format!(
+            r#"{{"join":"J",{wall}"players":[{{"key":"K","name":"Ada"}}],
+            "rounds":[{{"rule":{{"rule":"of-the-mean","num":1,"den":3}},"low":0.0,"high":10.0,
+            "open":false,"revealed":true,"asked":1,"picks":{{"K":{{"value":3.0,"at":2}}}}}}],
+            "last_seen":5}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_room_saved_before_the_lobby_or_with_it_flattened_loads() {
+        use rooms::Room;
+        for (old, wall) in [(saved(""), None), (saved(r#""wall":"W","#), Some("W"))] {
+            let mut old = old;
+            Game::migrate(&mut old);
+            let game: Game = serde_json::from_value(old).expect("an old room loads");
+            assert_eq!(game.lobby.join, "J");
+            assert_eq!(game.player("K").unwrap().name, "Ada");
+            match wall {
+                Some(wall) => assert_eq!(game.lobby.wall, wall, "keeping its wall"),
+                None => assert!(!game.lobby.wall.is_empty(), "and is given a wall"),
+            }
+            assert_eq!(outcome(&game).winners, vec!["Ada"]);
+            let mut again = serde_json::to_value(&game).unwrap();
+            Game::migrate(&mut again);
+            let again: Game = serde_json::from_value(again).unwrap();
+            assert_eq!(again.lobby.wall, game.lobby.wall, "which it keeps");
+            assert_eq!(again.player("K").unwrap().id, game.player("K").unwrap().id);
+        }
     }
 }

@@ -1,16 +1,25 @@
 // The number games, in a browser.
 //
-// One page with three screens: the one that opens a room, the host's, and
-// the player's, which is almost always a phone.
+// One page with four screens: the one that opens a room, the host's, the
+// player's, which is almost always a phone, and the wall, which is a
+// projector.
 
 import {
+  type Feed,
+  type Present,
+  type WallView,
   api,
   byId,
+  confirmTap,
+  connectedCount,
+  el,
   esc,
   fail,
   hide,
   html,
+  joinLink,
   joining,
+  keepAwake,
   landed,
   list,
   num,
@@ -18,13 +27,17 @@ import {
   onSubmit,
   opening,
   plural,
+  roster,
   route,
   sentState,
   setValue,
+  shareLink,
   show,
-  showJoin,
+  showConnection,
   text,
   value,
+  wall,
+  wallButton,
   watch,
 } from "./rooms";
 import { type Answers, read } from "./answer";
@@ -82,6 +95,11 @@ interface Past {
 
 interface HostView {
   join: string;
+  /** The wall's key, for "Open the wall view". */
+  wall: string;
+  /** Everybody, with whose phone is connected. */
+  people: Present[];
+  /** Everybody, with whether they have picked this round. */
   players: Who[];
   round: Playing | null;
   outcome: Outcome | null;
@@ -99,6 +117,35 @@ interface PlayerView {
   outcome: Outcome | null;
   won: boolean | null;
   score: Score | null;
+}
+
+/** One number on the wall's strip: how many picked it, never who. */
+interface Spot {
+  value: number;
+  count: number;
+  won: boolean;
+}
+
+/** What the wall shows of a round that has come out. */
+interface Shown {
+  n: number;
+  target: number | null;
+  target_label: string | null;
+  mean: number | null;
+  median: number | null;
+  total: number | null;
+  winners: number;
+  why: string | null;
+  spots: Spot[];
+}
+
+/** The game's part of the wall. Names only on the top of the board. */
+interface NumbersWall {
+  round: Playing | null;
+  picked: number;
+  players: number;
+  shown: Shown | null;
+  top: { name: string; wins: number; played: number }[];
 }
 
 /** How a rule is sent, and the range to start the fields at. */
@@ -349,12 +396,14 @@ function host(key: string): void {
   onSubmit("start-form", async () => {
     // Starting a round closes the one before it without revealing it, so
     // its numbers would never be shown. Ask, but only when there are some.
+    // A second tap rather than confirm(), which the hall's frame may not
+    // show.
     const current = now?.round;
     if (
       current &&
       !current.revealed &&
       now?.players.some((who) => who.picked) &&
-      !confirm("Nobody has seen this round's numbers yet. Start a new round anyway? They will not be shown.")
+      !confirmTap(byId("start"), "Nobody has seen these numbers. Tap again to drop them")
     ) {
       return;
     }
@@ -384,15 +433,30 @@ function host(key: string): void {
     fail("");
   });
 
+  const remove = (person: Present) => api("POST", at("/remove"), { id: person.id });
+
   function drawRoom(view: HostView): void {
-    showJoin(view.join);
-    byId("room").classList.toggle("tight", view.players.length > 0);
-    html(
-      "who",
-      view.players.length === 0
-        ? "Nobody has joined yet."
-        : `<span class="dot"></span> ${esc(plural(view.players.length, "person", "people"))} in the room`,
-    );
+    shareLink("share", joinLink(view.join));
+    text("who", connectedCount(view.people));
+    roster("people", view.people, { remove });
+    wallButton("wall-button", view.wall);
+  }
+
+  /** While a round is being played, the form for the next one is folded
+   *  away under it, so Reveal is the obvious thing to press. It opens
+   *  again once the round has come out. Only on a change of round, so a
+   *  host who opened it keeps it open. */
+  let foldedFor = "";
+  function fold(round: Playing | null): void {
+    const playing = round !== null && !round.revealed;
+    const shape = round === null ? "none" : `${round.asked}:${round.revealed}`;
+    text("next-title", round === null ? "Start a round" : "Start the next round");
+    if (shape === foldedFor) return;
+    foldedFor = shape;
+    byId<HTMLDetailsElement>("next").open = !playing;
+    // Who is in is folded too once rounds are being played: on a phone,
+    // a long list would push Reveal off the screen.
+    byId<HTMLDetailsElement>("in-room").open = round === null;
   }
 
   function drawBoard(view: HostView): void {
@@ -439,6 +503,7 @@ function host(key: string): void {
     now = view;
     drawRoom(view);
     const round = view.round;
+    fold(round);
     hide("playing", round === null);
     if (round) {
       text(
@@ -474,7 +539,8 @@ function host(key: string): void {
 
   // Fetches the room once, then keeps it up to date from its event
   // stream; `watch` adds the "/events" itself.
-  watch<HostView>(at(""), draw);
+  showConnection(watch<HostView>(at(""), draw));
+  void keepAwake();
 }
 
 
@@ -648,11 +714,114 @@ function player(key: string): void {
 
   // Fetches the room once, then keeps it up to date from its event
   // stream; `watch` adds the "/events" itself.
-  watch<PlayerView>(at(""), draw);
+  showConnection(
+    watch<PlayerView>(
+      at(""),
+      draw,
+      "You are not in this room. The host may have taken you out, or the room has finished. Scan the code again to rejoin.",
+    ),
+  );
+  void keepAwake();
+}
+
+
+// ------------------------------------------------------------------- wall
+
+/** The unnamed numbers along the range: a dot per number, as large as
+ *  the number of people who picked it, the winning ones in gold. */
+function wallStrip(round: Playing, shown: Shown): string {
+  const width = round.high - round.low || 1;
+  const at = (given: number) =>
+    Math.min(100, Math.max(0, ((given - round.low) / width) * 100));
+  const most = Math.max(1, ...shown.spots.map((spot) => spot.count));
+  const target =
+    shown.target === null
+      ? ""
+      : `<div class="target" style="left:${at(shown.target)}%"><span>${esc(num(shown.target))}</span></div>`;
+  const dots = [...shown.spots]
+    .sort((a, b) => Number(a.won) - Number(b.won))
+    .map((spot) => {
+      const size = 0.7 + 1.1 * Math.sqrt(spot.count / most);
+      return `<div class="spot${spot.won ? " winner" : ""}" style="left:${at(spot.value)}%;--size:${size.toFixed(2)}em" title="${esc(num(spot.value))}">${
+        spot.count > 1 ? `<i>${spot.count}</i>` : ""
+      }${spot.won ? `<span>${esc(num(spot.value))}</span>` : ""}</div>`;
+    })
+    .join("");
+  return `<div class="wall-strip">${target}${dots}</div>
+    <div class="ends"><span>${esc(num(round.low))}</span><span>${esc(num(round.high))}</span></div>`;
+}
+
+function drawWall(game: NumbersWall | null, slot: HTMLElement, _feed: Feed, view: WallView<NumbersWall | null>): void {
+  const round = game?.round ?? null;
+  if (!game || !round) {
+    slot.replaceChildren(
+      el("p", { className: "eyebrow wall-idle" }, "Number games"),
+      el("p", { className: "nw-rule wall-idle" }, "Waiting for the first round"),
+    );
+    return;
+  }
+  const state = round.revealed ? "Revealed" : round.open ? "Pick a number on your phone" : "Numbers are in";
+  slot.classList.toggle("nw-revealed", round.revealed);
+  const parts: Node[] = [
+    el("p", { className: "eyebrow nw-state" }, state),
+    el("p", { className: "nw-rule" }, sentence(round.label)),
+    el("p", { className: "nw-range" }, `${num(round.low)} to ${num(round.high)} · ${ANSWERS[round.answers]}`),
+  ];
+  if (!round.revealed) {
+    parts.push(
+      el(
+        "p",
+        { className: "nw-count" },
+        el("b", {}, `${game.picked} of ${game.players}`),
+        ` picked`,
+      ),
+      el("p", { className: "note nw-connected" }, `${view.connected === null ? "" : `${view.connected} of ${plural(game.players, "phone", "phones")} connected · `}nobody sees a number until the reveal`),
+    );
+  }
+  const shown = game.shown;
+  if (shown) {
+    const verdict =
+      shown.winners > 0
+        ? `${plural(shown.winners, "winner", "winners")} out of ${shown.n}`
+        : shown.why ?? "Nobody won this round.";
+    const box = el("div", { className: "nw-shown" });
+    const facts: [string, string][] = [];
+    if (shown.total !== null) facts.push(["Everybody together", num(shown.total)]);
+    if (shown.target !== null && shown.target_label !== "The average, to stay under") {
+      facts.push([shown.target_label ?? "The number to aim at", num(shown.target)]);
+    }
+    if (shown.n > 0) {
+      facts.push(["The average", num(shown.mean)], ["The middle number", num(shown.median)]);
+    }
+    box.innerHTML = `<p class="verdict ${shown.winners > 0 ? "won" : "none"}"><b>${esc(verdict)}</b></p>
+      ${shown.n > 0 ? wallStrip(round, shown) : ""}
+      <div class="facts">${facts
+        .map(([name, said]) => `<div class="fact"><span>${esc(name)}</span><b>${esc(said)}</b></div>`)
+        .join("")}</div>`;
+    parts.push(box);
+  }
+  if (game.top.length > 0) {
+    parts.push(
+      el(
+        "div",
+        { className: "nw-board" },
+        el("p", { className: "eyebrow nw-top-title" }, "Top of the board"),
+        el(
+          "ol",
+          { className: "nw-top" },
+          ...game.top.map((top) =>
+            el("li", {}, el("span", { className: "who" }, top.name), el("span", { className: "wins" }, plural(top.wins, "win", "wins"))),
+          ),
+        ),
+      ),
+    );
+  }
+  slot.replaceChildren(...parts);
 }
 
 const where = route();
 if (where.kind === "host") host(where.key);
 else if (where.kind === "join") joining("numbers", where.key);
 else if (where.kind === "player") player(where.key);
+else if (where.kind === "wall") wall<NumbersWall | null>(where.key, drawWall);
 else opening();
