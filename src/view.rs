@@ -42,6 +42,11 @@ pub struct Past {
     mean: Option<f64>,
     winners: Vec<String>,
     n: usize,
+    /// On the newest of two or more revealed rounds in a row with the
+    /// same rule and range, the target of each in the order they were
+    /// played, the round being shown included once it is revealed: how
+    /// the room moved, 33 → 21 → 12. Empty otherwise.
+    targets: Vec<f64>,
 }
 
 #[derive(Serialize)]
@@ -93,18 +98,45 @@ impl Round {
 }
 
 fn history(game: &Game) -> Vec<Past> {
-    game.rounds
+    let rounds = &game.rounds;
+    let outcomes: Vec<Option<Outcome>> = rounds
         .iter()
+        .map(|round| round.outcome(game.players()))
+        .collect();
+    // Round `b` carries on from round `a` before it: both came out, with
+    // the same rule over the same range.
+    let carries_on = |a: usize, b: usize| {
+        outcomes[a].is_some() && outcomes[b].is_some() && rounds[a].same_as(&rounds[b])
+    };
+    let current = rounds.len().saturating_sub(1);
+    (0..current)
         .rev()
-        .skip(1)
-        .filter_map(|round| {
-            let outcome = round.outcome(game.players())?;
+        .filter_map(|i| {
+            let outcome = outcomes[i].as_ref()?;
+            let mut targets = Vec::new();
+            // Only on the newest past round of a run, which then counts
+            // the round being shown if that carries on from it.
+            if i + 1 == current || !carries_on(i, i + 1) {
+                let end = if carries_on(i, current) { current } else { i };
+                let mut start = i;
+                while start > 0 && carries_on(start - 1, start) {
+                    start -= 1;
+                }
+                // A round nobody picked in has no target, and is passed over.
+                let trail: Vec<f64> = (start..=end)
+                    .filter_map(|k| outcomes[k].as_ref()?.target)
+                    .collect();
+                if trail.len() > 1 {
+                    targets = trail;
+                }
+            }
             Some(Past {
-                label: outcome.label,
+                label: outcome.label.clone(),
                 target: outcome.target,
                 mean: outcome.mean,
-                winners: outcome.winners,
+                winners: outcome.winners.clone(),
                 n: outcome.n,
+                targets,
             })
         })
         .collect()
@@ -346,5 +378,60 @@ mod tests {
     fn a_key_that_is_not_in_the_room_has_no_view() {
         let (game, _, _) = room();
         assert!(player(&game, "nobody").is_none());
+    }
+
+    /// Plays another round of the room's rule: Ada and Bo pick `picks`.
+    fn again(game: &mut Game, ada: &str, bo: &str, picks: [f64; 2], now: u64) {
+        game.again(now).unwrap();
+        game.pick(ada, picks[0], now + 1).unwrap();
+        game.pick(bo, picks[1], now + 1).unwrap();
+        game.reveal().unwrap();
+    }
+
+    fn targets(game: &Game) -> Vec<Vec<f64>> {
+        history(game).into_iter().map(|past| past.targets).collect()
+    }
+
+    #[test]
+    fn rounds_of_the_same_rule_in_a_row_show_how_the_target_moved() {
+        let (mut game, ada, bo) = room();
+        game.reveal().unwrap(); // a third of 5
+        assert!(targets(&game).is_empty(), "nothing played before it");
+        again(&mut game, &ada, &bo, [3.0, 3.0], 2000); // a third of 3
+        assert_eq!(
+            targets(&game),
+            vec![vec![5.0 / 3.0, 1.0]],
+            "with the round shown"
+        );
+        again(&mut game, &ada, &bo, [0.0, 3.0], 3000); // a third of 1.5
+        assert_eq!(targets(&game), vec![vec![5.0 / 3.0, 1.0, 0.5], vec![]]);
+
+        // A round not yet revealed is not in it.
+        game.again(4000).unwrap();
+        assert_eq!(
+            targets(&game),
+            vec![vec![5.0 / 3.0, 1.0, 0.5], vec![], vec![]]
+        );
+        game.reveal().unwrap();
+
+        // Another range is another run, and the one before keeps its line,
+        // passing over the round nobody picked in.
+        game.start(THIRD, 0.0, 100.0, 5000).unwrap();
+        game.pick(&ada, 30.0, 5001).unwrap();
+        game.reveal().unwrap();
+        let after = targets(&game);
+        assert_eq!(after[0], vec![5.0 / 3.0, 1.0, 0.5]);
+        assert!(after[1..].iter().all(Vec::is_empty), "{after:?}");
+    }
+
+    #[test]
+    fn the_same_rule_again_only_after_the_reveal() {
+        let (mut game, _, _) = room();
+        assert!(game.again(2000).is_err(), "not over unseen numbers");
+        game.reveal().unwrap();
+        game.again(2000).unwrap();
+        let (first, second) = (&game.rounds[0], &game.rounds[1]);
+        assert!(second.same_as(first) && second.answers == first.answers);
+        assert!(second.open && second.picks.is_empty());
     }
 }

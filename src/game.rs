@@ -318,6 +318,17 @@ impl Game {
         Ok(())
     }
 
+    /// Starts the round just revealed over again: the same rule, range
+    /// and kind of answer, so a room can see where a rule takes it.
+    pub fn again(&mut self, now: u64) -> Result<(), &'static str> {
+        let round = self.round().ok_or("No round has been played yet.")?;
+        if !round.revealed {
+            return Err("Reveal this round first.");
+        }
+        let (rule, answers, low, high) = (round.rule, round.answers, round.low, round.high);
+        self.start_with(rule, answers, low, high, now)
+    }
+
     pub fn pick(&mut self, player: &str, value: f64, now: u64) -> Result<(), &'static str> {
         self.put(player, value, None, now)
     }
@@ -421,6 +432,12 @@ impl Round {
     /// Every pick with who made it: the players in the order they
     /// joined, then anybody taken out since, under the name they picked
     /// with.
+    /// Whether `other` is this round played again: the same rule over the
+    /// same range.
+    pub fn same_as(&self, other: &Round) -> bool {
+        self.rule == other.rule && self.low == other.low && self.high == other.high
+    }
+
     fn named<'a>(&'a self, players: &'a [Player]) -> Vec<(&'a str, &'a Pick)> {
         let mut named: Vec<(&str, &Pick)> = players
             .iter()

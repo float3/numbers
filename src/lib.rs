@@ -134,6 +134,10 @@ async fn reveal(State(rooms): State<Shared>, Path(key): Path<String>) -> Respons
     act(&rooms, &key, |game, _| game.reveal()).await
 }
 
+async fn again(State(rooms): State<Shared>, Path(key): Path<String>) -> Response {
+    act(&rooms, &key, |game, now| game.again(now)).await
+}
+
 /// A player's view as JSON, or `None` for a key that is nobody's.
 fn player_json(game: &Game, key: &str, _now: u64) -> Option<String> {
     serde_json::to_string(&view::player(game, key)?).ok()
@@ -182,6 +186,7 @@ pub fn router_under(rooms: Shared, base: &str) -> Router {
         .route("/api/h/{key}/start", post(start))
         .route("/api/h/{key}/open", put(set_open))
         .route("/api/h/{key}/reveal", post(reveal))
+        .route("/api/h/{key}/again", post(again))
         .route("/api/p/{key}", get(player_state))
         .route("/api/p/{key}/events", get(player_events))
         .route("/api/p/{key}/pick", put(pick))
@@ -461,6 +466,34 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT, "5/3 of the average runs away");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn the_host_plays_the_same_rule_again_after_the_reveal() {
+        let (app, path) = app("again");
+        let (host, ada, _) = ready(&app).await;
+        let again = format!("/api/h/{host}/again");
+        let (status, _) = call(&app, "POST", &again, None).await;
+        assert_eq!(status, StatusCode::CONFLICT, "not before the reveal");
+        ok(
+            &app,
+            "PUT",
+            &format!("/api/p/{ada}/pick"),
+            Some(json!({"value": 6})),
+        )
+        .await;
+        ok(&app, "POST", &format!("/api/h/{host}/reveal"), None).await;
+        let view = ok(&app, "POST", &again, None).await["view"].clone();
+        assert_eq!(view["round"]["label"], "closest to 1/3 of the average");
+        assert_eq!(
+            (&view["round"]["low"], &view["round"]["high"]),
+            (&json!(0.0), &json!(10.0))
+        );
+        assert_eq!(view["round"]["revealed"], false);
+        let (status, _) = call(&app, "POST", &format!("/api/h/{ada}/again"), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "a player cannot");
 
         let _ = std::fs::remove_file(&path);
     }

@@ -407,3 +407,12 @@ tr.good td {
     align-self: start;
   }
 }
+
+/* Rounds of the same rule in a row: the line under the newest of them
+ * says how the target moved. */
+.past .trail {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
