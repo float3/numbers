@@ -81,7 +81,10 @@ interface Who {
 interface Score {
   name: string;
   played: number;
+  /** Every round won, a shared one counting in full. */
   wins: number;
+  /** Of those, the rounds won alone. */
+  solo: number;
   /** How far off the number to aim at, as a share of the range, on
    *  average over the rounds that had one. */
   off: number | null;
@@ -150,7 +153,7 @@ interface NumbersWall {
   picked: number;
   players: number;
   shown: Shown | null;
-  top: { name: string; wins: number; played: number }[];
+  top: { name: string; wins: number; solo: number; played: number }[];
 }
 
 /** How a rule is sent, and the range to start the fields at. */
@@ -274,6 +277,16 @@ const share = (part: number): string => {
   const percent = part * 100;
   return `${percent < 10 ? Number(percent.toFixed(1)) : Math.round(percent)}%`;
 };
+
+/** How many of someone's wins were theirs alone, said only when some
+ *  were shared: "(1 alone)", or "(shared)" when none were. Ranks equal
+ *  wins on the board. */
+const alone = (score: { wins: number; solo: number }): string =>
+  score.solo === score.wins ? "" : score.solo === 0 ? " (shared)" : ` (${score.solo} alone)`;
+
+/** Wins on the board, with the ones won alone when some were shared. */
+const won = (score: { wins: number; solo: number }): string =>
+  `${score.wins}${alone(score) ? `<span class="alone">${alone(score)}</span>` : ""}`;
 
 /** A pick as it was typed, with what it came to when that differs. */
 const typed = (text: string | null, value: number): string =>
@@ -489,13 +502,13 @@ function host(key: string): void {
       </tr></thead><tbody>${view.scores
         .map(
           (score) => `<tr>
-        <td>${esc(score.name)}</td><td>${score.played}</td><td>${score.wins}</td>
+        <td>${esc(score.name)}</td><td>${score.played}</td><td>${won(score)}</td>
         ${aimed ? `<td>${score.off === null ? "–" : share(score.off)}</td>` : ""}
       </tr>`,
         )
         .join("")}</tbody></table></div>${
         aimed
-          ? `<p class="note">Off the target: how far each pick was from the number to aim at, as a share of the round's range, on average over the rounds that had one.</p>`
+          ? `<p class="note">Off the target: how far each pick was from the number to aim at, as a share of the round's range, on average over the rounds that had one. Equal wins go by rounds won alone, then by this.</p>`
           : ""
       }`,
     );
@@ -843,7 +856,7 @@ function drawWall(game: NumbersWall | null, slot: HTMLElement, _feed: Feed, view
           "ol",
           { className: "nw-top" },
           ...game.top.map((top) =>
-            el("li", {}, el("span", { className: "who" }, top.name), el("span", { className: "wins" }, plural(top.wins, "win", "wins"))),
+            el("li", {}, el("span", { className: "who" }, top.name), el("span", { className: "wins" }, plural(top.wins, "win", "wins"), alone(top) ? el("span", { className: "alone" }, alone(top)) : null)),
           ),
         ),
       ),

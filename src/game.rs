@@ -668,7 +668,12 @@ impl Round {
 pub struct Score {
     pub name: String,
     pub played: usize,
+    /// Every round they won, shared or not: a round won by several
+    /// counts in full for each of them.
     pub wins: usize,
+    /// The rounds they won on their own. Ranks players with as many
+    /// wins as each other.
+    pub solo: usize,
     /// How far their picks were from the number to aim at, as a share
     /// of the round's range, on average: 0.04 is 4% of the range off.
     /// Only rounds with a number to aim at count, so that rounds played
@@ -678,8 +683,10 @@ pub struct Score {
 }
 
 impl Game {
-    /// The evening so far, most wins first, over the revealed rounds
-    /// only. A tally that included the round being played would give away
+    /// The evening so far, over the revealed rounds only: most wins
+    /// first, then most won alone, then closest to the target on
+    /// average, so that the order among equal wins is not just the
+    /// alphabet. A tally that included the round being played would give away
     /// who was winning it.
     ///
     /// Each round is worked out once, not once per player: every phone
@@ -709,21 +716,40 @@ impl Game {
                         Some((pick.value - (*aim)?).abs() / (round.high - round.low))
                     })
                     .collect();
-                let wins = revealed
+                let won: Vec<usize> = revealed
                     .iter()
                     .filter(|(_, winners, _)| winners.contains(&player.name))
-                    .count();
+                    .map(|(_, winners, _)| winners.len())
+                    .collect();
                 Score {
                     name: player.name.clone(),
                     played,
-                    wins,
+                    wins: won.len(),
+                    solo: won.iter().filter(|&&n| n == 1).count(),
                     off: (!off.is_empty()).then(|| mean(&off)),
                 }
             })
             .filter(|score| score.played > 0)
             .collect();
-        scores.sort_by(|a, b| b.wins.cmp(&a.wins).then(a.name.cmp(&b.name)));
+        scores.sort_by(|a, b| {
+            b.wins
+                .cmp(&a.wins)
+                .then(b.solo.cmp(&a.solo))
+                .then(closer(a.off, b.off))
+                .then(a.name.cmp(&b.name))
+        });
         scores
+    }
+}
+
+/// Less off the target first, and nobody who had nothing to aim at
+/// ahead of somebody who did.
+fn closer(a: Option<f64>, b: Option<f64>) -> std::cmp::Ordering {
+    match (a, b) {
+        (Some(a), Some(b)) => a.total_cmp(&b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     }
 }
 
@@ -1014,6 +1040,75 @@ mod tests {
         );
         assert_eq!(scores[1].off, Some(0.75), "and 9 picked");
         assert_eq!(scores[1].wins, 0);
+    }
+
+    /// Ada and Cy share the first round: 0 and 3 are both 1.5 off a
+    /// third of 4.5. Then a second round with `picks` for Ada, Bo and Cy.
+    fn shared_then(rule: Rule, low: f64, high: f64, picks: [f64; 3]) -> Game {
+        let mut game = room(THIRD, 0.0, 10.0, &[0.0, 6.0, 3.0, 9.0]);
+        let keys: Vec<String> = game.players().iter().map(|p| p.key.clone()).collect();
+        game.reveal().unwrap();
+        game.start(rule, low, high, 2000).unwrap();
+        for (key, value) in keys.iter().zip(picks) {
+            game.pick(key, value, 2001).unwrap();
+        }
+        game.reveal().unwrap();
+        game
+    }
+
+    fn order(game: &Game) -> Vec<(String, usize, usize)> {
+        game.scores()
+            .into_iter()
+            .map(|s| (s.name, s.wins, s.solo))
+            .collect()
+    }
+
+    #[test]
+    fn a_shared_round_is_a_whole_win_for_each_winner() {
+        let mut game = room(THIRD, 0.0, 10.0, &[0.0, 6.0, 3.0, 9.0]);
+        game.reveal().unwrap();
+        assert_eq!(outcome(&game).winners, vec!["Ada", "Cy"]);
+        let scores = game.scores();
+        for name in ["Ada", "Cy"] {
+            let score = scores.iter().find(|s| s.name == name).unwrap();
+            assert_eq!((score.wins, score.solo), (1, 0), "{name}");
+        }
+    }
+
+    #[test]
+    fn among_equal_wins_the_ones_won_alone_come_first() {
+        // Bo wins the lowest unique number alone. Ada is closer to the
+        // target over the evening than Bo, and comes first alphabetically,
+        // but won her round with Cy.
+        let game = shared_then(Rule::LowestUnique, 1.0, 20.0, [2.0, 1.0, 2.0]);
+        assert_eq!(
+            order(&game),
+            vec![
+                ("Bo".into(), 1, 1),
+                ("Ada".into(), 1, 0),
+                ("Cy".into(), 1, 0),
+                ("Di".into(), 0, 0),
+            ]
+        );
+        let scores = game.scores();
+        assert!(scores[1].off < scores[0].off, "Ada was the closer");
+    }
+
+    #[test]
+    fn among_equal_wins_and_wins_alone_the_closest_comes_first() {
+        // A third of 5 is 1.67: Bo wins with 0, Cy's 6 is closer than
+        // Ada's 9, so Cy goes ahead of Ada though both won one round,
+        // together.
+        let game = shared_then(THIRD, 0.0, 10.0, [9.0, 0.0, 6.0]);
+        assert_eq!(
+            order(&game),
+            vec![
+                ("Bo".into(), 1, 1),
+                ("Cy".into(), 1, 0),
+                ("Ada".into(), 1, 0),
+                ("Di".into(), 0, 0),
+            ]
+        );
     }
 
     #[test]

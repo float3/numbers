@@ -218,6 +218,8 @@ pub struct Shown {
 pub struct Top {
     name: String,
     wins: usize,
+    /// Of those, the ones won alone.
+    solo: usize,
     played: usize,
 }
 
@@ -283,6 +285,7 @@ pub fn wall(game: &Game) -> Wall {
             .map(|score| Top {
                 name: score.name,
                 wins: score.wins,
+                solo: score.solo,
                 played: score.played,
             })
             .collect(),
