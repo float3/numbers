@@ -61,7 +61,9 @@ impl Rule {
             Rule::MostPopular => "the number the most people picked".into(),
             Rule::Loneliest => "the number furthest from everybody else's".into(),
             Rule::UnderTheLimit { limit } => {
-                format!("the highest number, if everybody's together come to no more than {limit}")
+                format!(
+                    "the highest number, if everybody's numbers together come to no more than {limit}"
+                )
             }
         }
     }
@@ -833,11 +835,19 @@ mod tests {
     }
 
     #[test]
-    fn the_highest_wins_under_the_limit_and_nobody_wins_over_it() {
+    fn the_highest_wins_up_to_the_limit_and_nobody_wins_over_it() {
         let rule = Rule::UnderTheLimit { limit: 100.0 };
         let mut game = room(rule, 0.0, 100.0, &[10.0, 20.0, 30.0]);
         game.reveal().unwrap();
         assert_eq!(outcome(&game).winners, vec!["Cy"], "60 is under 100");
+
+        let mut game = room(rule, 0.0, 100.0, &[10.0, 20.0, 70.0]);
+        game.reveal().unwrap();
+        assert_eq!(
+            outcome(&game).winners,
+            vec!["Cy"],
+            "exactly 100 is no more than 100"
+        );
 
         let mut game = room(rule, 0.0, 100.0, &[10.0, 20.0, 80.0]);
         game.reveal().unwrap();
@@ -951,7 +961,7 @@ mod tests {
             (Rule::Loneliest, "the number furthest from everybody else's"),
             (
                 Rule::UnderTheLimit { limit: 100.0 },
-                "the highest number, if everybody's together come to no more than 100",
+                "the highest number, if everybody's numbers together come to no more than 100",
             ),
         ] {
             assert_eq!(rule.label(), label);

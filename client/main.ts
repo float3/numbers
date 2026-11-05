@@ -249,7 +249,7 @@ const RULES: Preset[] = [
   },
   {
     id: "under-the-limit",
-    name: "The highest number, if the room's total stays under the limit",
+    name: "The highest number, if the room's total is no more than the limit",
     rule: "under-the-limit",
     limit: 100,
     low: 0,
