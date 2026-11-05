@@ -4,7 +4,7 @@
 //! else picked. The oldest of them, closest to a fraction of the average,
 //! is the Keynesian beauty contest.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -574,20 +574,16 @@ impl Round {
         } else {
             None
         };
-        let text = |name: &str| {
-            players
-                .iter()
-                .find(|p| p.name == name)
-                .and_then(|p| self.picks.get(&p.key))
-                .and_then(|pick| pick.text.clone())
-        };
-        let mut picks: Vec<Chosen> = named
+        let won: HashSet<&str> = winners.iter().copied().collect();
+        let mut picks: Vec<Chosen> = players
             .iter()
-            .map(|(name, value)| Chosen {
-                name: (*name).to_string(),
-                value: *value,
-                text: text(name),
-                won: winners.contains(name),
+            .filter_map(|p| {
+                self.picks.get(&p.key).map(|pick| Chosen {
+                    name: p.name.clone(),
+                    value: pick.value,
+                    text: pick.text.clone(),
+                    won: won.contains(p.name.as_str()),
+                })
             })
             .collect();
         picks.sort_by(|a, b| a.value.total_cmp(&b.value));
@@ -625,23 +621,29 @@ impl Game {
     /// The evening so far, most wins first, over the revealed rounds
     /// only. A tally that included the round being played would give away
     /// who was winning it.
+    ///
+    /// Each round is worked out once, not once per player: every phone
+    /// watching the room is sent this, several times a second.
     pub fn scores(&self) -> Vec<Score> {
-        let revealed: Vec<&Round> = self.rounds.iter().filter(|round| round.revealed).collect();
+        let revealed: Vec<(&Round, HashSet<String>)> = self
+            .rounds
+            .iter()
+            .filter_map(|round| {
+                let outcome = round.outcome(&self.players)?;
+                Some((round, outcome.winners.into_iter().collect()))
+            })
+            .collect();
         let mut scores: Vec<Score> = self
             .players
             .iter()
             .map(|player| {
                 let picks: Vec<f64> = revealed
                     .iter()
-                    .filter_map(|round| round.picks.get(&player.key).map(|pick| pick.value))
+                    .filter_map(|(round, _)| round.picks.get(&player.key).map(|pick| pick.value))
                     .collect();
                 let wins = revealed
                     .iter()
-                    .filter(|round| {
-                        round
-                            .outcome(&self.players)
-                            .is_some_and(|outcome| outcome.winners.contains(&player.name))
-                    })
+                    .filter(|(_, winners)| winners.contains(&player.name))
                     .count();
                 Score {
                     name: player.name.clone(),
