@@ -77,6 +77,13 @@ impl Rule {
         )
     }
 
+    /// Whether the rule has a number to aim at, so that how far off a
+    /// pick was means something. The average under "the highest number
+    /// below the average" is a line to stay under, not a number to hit.
+    pub fn aims(self) -> bool {
+        matches!(self, Rule::OfTheMean { .. } | Rule::OfTheMedian { .. })
+    }
+
     fn valid(self) -> Result<(), &'static str> {
         match self {
             Rule::OfTheMean { num, den } | Rule::OfTheMedian { num, den } => {
@@ -645,9 +652,12 @@ pub struct Score {
     pub name: String,
     pub played: usize,
     pub wins: usize,
-    /// Their mean pick, which is the number that moves as a room works
-    /// a rule out.
-    pub average: Option<f64>,
+    /// How far their picks were from the number to aim at, as a share
+    /// of the round's range, on average: 0.04 is 4% of the range off.
+    /// Only rounds with a number to aim at count, so that rounds played
+    /// over different ranges can be compared. `None` when they have
+    /// played none of those.
+    pub off: Option<f64>,
 }
 
 impl Game {
@@ -658,31 +668,39 @@ impl Game {
     /// Each round is worked out once, not once per player: every phone
     /// watching the room is sent this, several times a second.
     pub fn scores(&self) -> Vec<Score> {
-        let revealed: Vec<(&Round, HashSet<String>)> = self
+        let revealed: Vec<(&Round, HashSet<String>, Option<f64>)> = self
             .rounds
             .iter()
             .filter_map(|round| {
                 let outcome = round.outcome(self.players())?;
-                Some((round, outcome.winners.into_iter().collect()))
+                let aim = outcome.target.filter(|_| round.rule.aims());
+                Some((round, outcome.winners.into_iter().collect(), aim))
             })
             .collect();
         let mut scores: Vec<Score> = self
             .players()
             .iter()
             .map(|player| {
-                let picks: Vec<f64> = revealed
+                let played = revealed
                     .iter()
-                    .filter_map(|(round, _)| round.picks.get(&player.key).map(|pick| pick.value))
+                    .filter(|(round, _, _)| round.picks.contains_key(&player.key))
+                    .count();
+                let off: Vec<f64> = revealed
+                    .iter()
+                    .filter_map(|(round, _, aim)| {
+                        let pick = round.picks.get(&player.key)?;
+                        Some((pick.value - (*aim)?).abs() / (round.high - round.low))
+                    })
                     .collect();
                 let wins = revealed
                     .iter()
-                    .filter(|(_, winners)| winners.contains(&player.name))
+                    .filter(|(_, winners, _)| winners.contains(&player.name))
                     .count();
                 Score {
                     name: player.name.clone(),
-                    played: picks.len(),
+                    played,
                     wins,
-                    average: (!picks.is_empty()).then(|| mean(&picks)),
+                    off: (!off.is_empty()).then(|| mean(&off)),
                 }
             })
             .filter(|score| score.played > 0)
@@ -929,6 +947,37 @@ mod tests {
     }
 
     #[test]
+    fn how_far_off_is_a_share_of_each_range_and_only_where_there_is_an_aim() {
+        let mut game = room(THIRD, 0.0, 10.0, &[3.0, 6.0]);
+        let keys: Vec<String> = game.players().iter().map(|p| p.key.clone()).collect();
+        game.reveal().unwrap(); // a third of 4.5 is 1.5
+        game.start(THIRD, 0.0, 100.0, 2000).unwrap();
+        game.pick(&keys[0], 10.0, 2001).unwrap();
+        game.pick(&keys[1], 50.0, 2001).unwrap();
+        game.reveal().unwrap(); // a third of 30 is 10
+        game.start(Rule::UnderTheMean, 0.0, 100.0, 3000).unwrap();
+        game.pick(&keys[0], 90.0, 3001).unwrap();
+        game.reveal().unwrap();
+
+        let scores = game.scores();
+        let ada = scores.iter().find(|s| s.name == "Ada").unwrap();
+        assert_eq!(ada.played, 3);
+        // 1.5 of 10 off, then dead on: 7.5% on average. The round below
+        // the average has nothing to aim at, so it does not count.
+        assert!((ada.off.unwrap() - 0.075).abs() < 1e-9, "{:?}", ada.off);
+        let bo = scores.iter().find(|s| s.name == "Bo").unwrap();
+        assert!(
+            (bo.off.unwrap() - (0.45 + 0.4) / 2.0).abs() < 1e-9,
+            "{:?}",
+            bo.off
+        );
+
+        let mut game = room(Rule::LowestUnique, 1.0, 20.0, &[3.0]);
+        game.reveal().unwrap();
+        assert_eq!(game.scores()[0].off, None, "no number to aim at");
+    }
+
+    #[test]
     fn the_scoreboard_counts_the_revealed_rounds_only() {
         let mut game = room(THIRD, 0.0, 10.0, &[9.0, 0.0]);
         let keys: Vec<String> = game.players().iter().map(|p| p.key.clone()).collect();
@@ -941,7 +990,12 @@ mod tests {
         assert_eq!(scores[0].name, "Bo", "Bo won the revealed round");
         assert_eq!(scores[0].wins, 1);
         assert_eq!(scores[0].played, 1, "the round still going is not counted");
-        assert_eq!(scores[0].average, Some(0.0));
+        assert_eq!(
+            scores[0].off,
+            Some(0.15),
+            "1.5 to aim at, 0 picked, out of 10"
+        );
+        assert_eq!(scores[1].off, Some(0.75), "and 9 picked");
         assert_eq!(scores[1].wins, 0);
     }
 
