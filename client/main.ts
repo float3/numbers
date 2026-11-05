@@ -36,6 +36,7 @@ import {
   showConnection,
   text,
   value,
+  waitingLine,
   wall,
   wallButton,
   watch,
@@ -74,6 +75,7 @@ interface Outcome {
 }
 
 interface Who {
+  id: number;
   name: string;
   picked: boolean;
 }
@@ -109,6 +111,8 @@ interface HostView {
   people: Present[];
   /** Everybody, with whether they have picked this round. */
   players: Who[];
+  /** Not connected, and no pick in this round or the one before. */
+  away: number[];
   round: Playing | null;
   outcome: Outcome | null;
   history: Past[];
@@ -466,8 +470,16 @@ function host(key: string): void {
 
   function drawRoom(view: HostView): void {
     shareLink("share", joinLink(view.join));
-    text("who", connectedCount(view.people));
-    roster("people", view.people, { remove });
+    // The list folds away once rounds start; the count of who is away
+    // stays in sight, so the host knows to open it.
+    text(
+      "who",
+      connectedCount(view.people) + (view.away.length ? ` · ${view.away.length} away` : ""),
+    );
+    roster("people", view.people, {
+      remove,
+      away: { ids: view.away, remove: (ids) => api("POST", at("/remove-away"), { ids }) },
+    });
     wallButton("wall-button", view.wall);
   }
 
@@ -556,17 +568,12 @@ function host(key: string): void {
         "h-range",
         `${num(round.low)} to ${num(round.high)}, ${ANSWERS[round.answers]}`,
       );
-      const picked = view.players.filter((who) => who.picked).length;
-      const missing = view.players
-        .filter((who) => !who.picked)
-        .map((who) => who.name);
+      const picked = new Set(view.players.filter((who) => who.picked).map((who) => who.id));
       text(
         "progress",
-        `${picked} of ${plural(view.players.length, "person", "people")} picked` +
-          (!round.revealed && missing.length > 0 && missing.length <= 6
-            ? ` · waiting on ${list(missing)}`
-            : "") +
-          (round.revealed ? "" : " · nobody sees a number until you reveal"),
+        round.revealed
+          ? `${picked.size} of ${plural(view.players.length, "person", "people")} picked`
+          : `${waitingLine(picked, view.people)} · nobody sees a number until you reveal`,
       );
       text("close", round.open ? "Stop taking numbers" : "Take more numbers");
       // Once the round is out, the next thing is often the same rule

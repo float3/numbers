@@ -210,6 +210,17 @@ impl HasLobby for Game {
         }
     }
 
+    /// Picked in the round being played or the one before. Somebody
+    /// who has not, and whose phone is not connected, is offered to the
+    /// host as away.
+    fn recent(&self, player: &Player) -> bool {
+        self.rounds
+            .iter()
+            .rev()
+            .take(2)
+            .any(|round| round.picks.contains_key(&player.key))
+    }
+
     fn wall_game(&self, _now: u64) -> serde_json::Value {
         serde_json::to_value(crate::view::wall(self)).unwrap_or_default()
     }
