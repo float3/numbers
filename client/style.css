@@ -380,6 +380,12 @@ tr.good td {
   margin-left: 0.6em;
 }
 
+/* Wins that were not shared: they rank equal wins, so say them, quietly. */
+.alone {
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+
 /* Once a round is out, the result is the thing to read: the rule gives
  * it room, and the board sits beside the numbers on a wide screen. */
 .nw-revealed .nw-rule {

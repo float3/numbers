@@ -716,7 +716,7 @@ mod tests {
         );
         assert_eq!(
             game["top"],
-            json!([{ "name": "Bo", "wins": 1, "played": 1 }])
+            json!([{ "name": "Bo", "wins": 1, "solo": 1, "played": 1 }])
         );
         let text = game.to_string();
         assert!(
