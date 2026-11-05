@@ -347,6 +347,17 @@ function host(key: string): void {
   ruleChanged();
 
   onSubmit("start-form", async () => {
+    // Starting a round closes the one before it without revealing it, so
+    // its numbers would never be shown. Ask, but only when there are some.
+    const current = now?.round;
+    if (
+      current &&
+      !current.revealed &&
+      now?.players.some((who) => who.picked) &&
+      !confirm("Nobody has seen this round's numbers yet. Start a new round anyway? They will not be shown.")
+    ) {
+      return;
+    }
     const rule = chosen();
     const body: Record<string, unknown> = {
       rule: rule.rule,
