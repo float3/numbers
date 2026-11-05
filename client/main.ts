@@ -93,6 +93,9 @@ interface Past {
   mean: number | null;
   winners: string[];
   n: number;
+  /** On the newest of a run of rounds with the same rule and range, the
+   *  target of each, oldest first. */
+  targets: number[];
 }
 
 interface HostView {
@@ -441,6 +444,11 @@ function host(key: string): void {
     fail("");
   });
 
+  onClick("again", async () => {
+    await api("POST", at("/again"));
+    fail("");
+  });
+
   const remove = (person: Present) => api("POST", at("/remove"), { id: person.id });
 
   function drawRoom(view: HostView): void {
@@ -506,7 +514,13 @@ function host(key: string): void {
         <span>${esc(sentence(past.label))}</span>
         <span>${past.n === 0 ? "nobody picked" : `${past.target === null ? "" : `target ${num(past.target)} · `}average ${num(past.mean)} · ${
           past.winners.length > 0 ? `won by ${esc(list(past.winners))}` : "nobody won"
-        }`}</span>
+        }`}${
+          past.targets.length > 1
+            ? `<b class="trail">${past.label === "the highest number below the average" ? "averages" : "targets"} ${past.targets
+                .map((target) => num(target))
+                .join(" → ")}</b>`
+            : ""
+        }</span>
       </div>`,
         )
         .join("")}`,
@@ -542,9 +556,11 @@ function host(key: string): void {
           (round.revealed ? "" : " · nobody sees a number until you reveal"),
       );
       text("close", round.open ? "Stop taking numbers" : "Take more numbers");
-      byId<HTMLButtonElement>("close").disabled = round.revealed;
-      byId<HTMLButtonElement>("reveal").disabled = round.revealed;
-      text("reveal", round.revealed ? "Revealed" : "Reveal");
+      // Once the round is out, the next thing is often the same rule
+      // again, to see where the room goes with it.
+      hide("close", round.revealed);
+      hide("reveal", round.revealed);
+      hide("again", !round.revealed);
       html("outcome", view.outcome ? outcomeHtml(round, view.outcome) : "");
     }
     drawBoard(view);
