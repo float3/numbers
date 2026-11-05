@@ -21,7 +21,7 @@ built on [rooms](https://github.com/float3/rooms).
 | The highest number below the average | |
 | The number the most people pick | nobody wins if no two people pick the same number |
 | The number furthest from everybody else's | measured to the nearest other pick |
-| The highest number, under a limit | over the limit, nobody wins |
+| The highest number, if the total is no more than a limit | over the limit, nobody wins |
 
 the first one is the Keynesian beauty contest. the pages state the rules
 and nothing else: working out what to pick is the game.
