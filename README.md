@@ -42,19 +42,35 @@ taking numbers.
 
 ## nobody sees a number until the reveal
 
-including the host, because the host's screen is often the one on the wall.
-until the host reveals the round, every screen gets the rule, the range,
-and a count of who has picked. then every number appears at once, with the
-winner, the average, the middle number and the number the room was aiming
-at.
+including the host. until the host reveals the round, every screen gets
+the rule, the range, and a count of who has picked. then every number
+appears at once, with the winner, the average, the middle number and the
+number the room was aiming at.
 
-## three links
+## the wall
+
+the host's screen has "Open the wall view": a read-only page for a
+projector, with the QR code, who is in, the rule in large type and how many
+have picked. at the reveal it shows the numbers as unnamed dots along the
+range, the winning ones in gold, and the top three of the evening by name.
+it never puts a name next to a number.
+
+## joining
+
+a name already held by a connected phone is refused ("That name is
+taken"), so two people called Alex do not become one player. a phone that
+lost its link gets back in with the key it kept, or by its name once it has
+been gone a few seconds. the host can take somebody out from the list of
+who is in; their link stops working.
+
+## four links
 
 | | |
 | --- | --- |
 | `/h/<key>` | runs the room. Keep it; it is the only way back in. |
 | `/j/<key>` | joins it. This is the one on the wall. |
 | `/p/<key>` | one player's own, kept by their phone. |
+| `/w/<key>` | the wall. It shows only what the whole room may see, and runs nothing. |
 
 the key in the link is the only access control: 24 random characters, and
 no accounts. see [rooms](https://github.com/float3/rooms) for what that

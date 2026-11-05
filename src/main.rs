@@ -4,9 +4,9 @@
 //! phone, and the rule decides who won. No number is shown to anybody
 //! until the host reveals the round.
 //!
-//! There are three kinds of link, and the key in each is the only
-//! authority there is: `/h/<key>` runs the room, `/j/<key>` joins it, and
-//! `/p/<key>` belongs to one player.
+//! There are four kinds of link, and the key in each is the only
+//! authority there is: `/h/<key>` runs the room, `/j/<key>` joins it,
+//! `/p/<key>` belongs to one player, and `/w/<key>` is the wall.
 
 use std::path::PathBuf;
 
