@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> This repository is archived. numbers now lives in [float3/rooms](https://github.com/float3/rooms/tree/main/numbers), where it is developed and served from the hall.
+
 # numbers
 
 [![CI](https://github.com/float3/numbers/actions/workflows/ci.yml/badge.svg)](https://github.com/float3/numbers/actions/workflows/ci.yml)
